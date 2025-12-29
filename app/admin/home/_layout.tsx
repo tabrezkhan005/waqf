@@ -20,7 +20,7 @@ export default function HomeStack() {
       <Stack.Screen
         name="index"
         options={{
-          title: 'Admin Dashboard',
+          headerShown: false,
         }}
       />
       <Stack.Screen

@@ -1,150 +1,677 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, RefreshControl, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase/client';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import AnimatedChart from '@/components/shared/AnimatedChart';
+import FilterBar from '@/components/reports/FilterBar';
+import type { GlobalMetrics, TimeSeriesData, StatusBreakdown } from '@/lib/types/database';
+import { theme } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { queryAllDistrictDCB, getAggregatedDCBStats } from '@/lib/dcb/district-tables';
 
-export default function AccountsReportsHomeScreen() {
+export default function AccountsReportsScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [metrics, setMetrics] = useState<GlobalMetrics>({
+    total_collections: 0,
+    total_arrear: 0,
+    total_current: 0,
+    pending_count: 0,
+    verified_count: 0,
+    rejected_count: 0,
+  });
+  const [statusBreakdown, setStatusBreakdown] = useState<StatusBreakdown>({
+    pending: 0,
+    verified: 0,
+    rejected: 0,
+    pending_amount: 0,
+    verified_amount: 0,
+    rejected_amount: 0,
+  });
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([]);
+  const [topDistricts, setTopDistricts] = useState<Array<{ name: string; amount: number }>>([]);
+  const [districts, setDistricts] = useState<Array<{ id: string | number; name: string }>>([]);
+  const [dateRange, setDateRange] = useState<{ label: string; from: Date | null; to: Date | null }>({
+    label: 'All Time',
+    from: null,
+    to: null,
+  });
+  const [districtFilter, setDistrictFilter] = useState<string | null>(null);
 
-  const reportOptions = [
+  useEffect(() => {
+    loadDistricts();
+  }, []);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [dateRange, districtFilter]);
+
+  const loadDistricts = async () => {
+    try {
+      const { data } = await supabase
+        .from('districts')
+        .select('id, name')
+        .order('name');
+
+      setDistricts(data || []);
+    } catch (error) {
+      console.error('Error loading districts:', error);
+    }
+  };
+
+  const loadDashboardData = useCallback(async () => {
+    try {
+      setLoading(true);
+      await Promise.all([
+        loadGlobalMetrics(),
+        loadStatusBreakdown(),
+        loadTimeSeries(),
+        loadTopDistricts(),
+      ]);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [dateRange, districtFilter]);
+
+  const loadGlobalMetrics = async () => {
+    try {
+      const fromDate = dateRange.from ? dateRange.from.toISOString() : null;
+      const toDate = dateRange.to ? dateRange.to.toISOString() : null;
+      const districtId = districtFilter || null;
+
+      // Load DCB data from all district tables
+      let dcbData = await queryAllDistrictDCB(
+        'demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, created_at, updated_at, _district_name'
+      );
+
+      // Apply date filter
+      if (fromDate) {
+        dcbData = dcbData.filter((d: any) => {
+          const date = d.updated_at || d.created_at;
+          if (!date) return false;
+          try {
+            return new Date(date).toISOString() >= fromDate;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+      if (toDate) {
+        dcbData = dcbData.filter((d: any) => {
+          const date = d.updated_at || d.created_at;
+          if (!date) return false;
+          try {
+            return new Date(date).toISOString() <= toDate;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+
+      // Filter by district if needed
+      if (districtId) {
+        const { data: districtData } = await supabase
+          .from('districts')
+          .select('name')
+          .eq('id', districtId)
+          .single();
+
+        if (districtData) {
+          dcbData = dcbData.filter((d: any) => d._district_name === districtData.name);
+        }
+      }
+
+      // Calculate metrics from DCB data
+      const totalCollections = dcbData.length;
+      const totalArrear = dcbData.reduce((sum: number, d: any) => sum + Number(d.collection_arrears || 0), 0);
+      const totalCurrent = dcbData.reduce((sum: number, d: any) => sum + Number(d.collection_current || 0), 0);
+
+      // Get collections status counts
+      const { data: collectionsData } = await supabase
+        .from('collections')
+        .select('status')
+        .in('status', ['pending', 'sent_to_accounts', 'verified', 'rejected']);
+
+      const pendingCount = collectionsData?.filter((c: any) =>
+        c.status === 'pending' || c.status === 'sent_to_accounts'
+      ).length || 0;
+      const verifiedCount = collectionsData?.filter((c: any) =>
+        c.status === 'verified'
+      ).length || 0;
+      const rejectedCount = collectionsData?.filter((c: any) =>
+        c.status === 'rejected'
+      ).length || 0;
+
+      setMetrics({
+        total_collections: totalCollections,
+        total_arrear: totalArrear,
+        total_current: totalCurrent,
+        pending_count: pendingCount,
+        verified_count: verifiedCount,
+        rejected_count: rejectedCount,
+      });
+    } catch (error) {
+      console.error('Error loading global metrics:', error);
+    }
+  };
+
+  const loadStatusBreakdown = async () => {
+    try {
+      // Load collections data for status breakdown
+      const { data: collectionsData, error } = await supabase
+        .from('collections')
+        .select(`
+          id,
+          arrear_amount,
+          current_amount,
+          status
+        `);
+
+      if (error) {
+        console.error('Error loading status breakdown:', error);
+        return;
+      }
+
+      // Calculate breakdown
+      const pending = collectionsData?.filter((c: any) =>
+        c.status === 'pending' || c.status === 'sent_to_accounts'
+      ) || [];
+      const verified = collectionsData?.filter((c: any) =>
+        c.status === 'verified'
+      ) || [];
+      const rejected = collectionsData?.filter((c: any) =>
+        c.status === 'rejected'
+      ) || [];
+
+      const pendingAmount = pending.reduce((sum: number, c: any) =>
+        sum + Number(c.arrear_amount || 0) + Number(c.current_amount || 0), 0
+      );
+      const verifiedAmount = verified.reduce((sum: number, c: any) =>
+        sum + Number(c.arrear_amount || 0) + Number(c.current_amount || 0), 0
+      );
+      const rejectedAmount = rejected.reduce((sum: number, c: any) =>
+        sum + Number(c.arrear_amount || 0) + Number(c.current_amount || 0), 0
+      );
+
+      setStatusBreakdown({
+        pending: pending.length,
+        verified: verified.length,
+        rejected: rejected.length,
+        pending_amount: pendingAmount,
+        verified_amount: verifiedAmount,
+        rejected_amount: rejectedAmount,
+      });
+    } catch (error) {
+      console.error('Error loading status breakdown:', error);
+    }
+  };
+
+  const loadTimeSeries = async () => {
+    try {
+      // Load DCB data from all district tables for time series
+      let dcbData = await queryAllDistrictDCB(
+        'demand_arrears, demand_current, collection_arrears, collection_current, created_at, updated_at, _district_name'
+      );
+
+      // Apply date filter
+      if (dateRange.from) {
+        const fromDate = dateRange.from.toISOString().split('T')[0];
+        dcbData = dcbData.filter((d: any) => {
+          const date = d.updated_at || d.created_at;
+          if (!date) return false;
+          try {
+            return new Date(date).toISOString().split('T')[0] >= fromDate;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+      if (dateRange.to) {
+        const toDate = dateRange.to.toISOString().split('T')[0];
+        const endDate = new Date(dateRange.to);
+        endDate.setDate(endDate.getDate() + 1);
+        const endDateStr = endDate.toISOString().split('T')[0];
+        dcbData = dcbData.filter((d: any) => {
+          const date = d.updated_at || d.created_at;
+          if (!date) return false;
+          try {
+            return new Date(date).toISOString().split('T')[0] <= endDateStr;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+
+      // Filter by district if needed
+      if (districtFilter) {
+        const { data: districtData } = await supabase
+          .from('districts')
+          .select('name')
+          .eq('id', districtFilter)
+          .single();
+
+        if (districtData) {
+          dcbData = dcbData.filter((d: any) => d._district_name === districtData.name);
+        }
+      }
+
+      // Group by month
+      const monthlyData = new Map<string, { arrear: number; current: number }>();
+
+      dcbData.forEach((d: any) => {
+        const date = d.updated_at || d.created_at;
+        if (!date) return;
+
+        try {
+          const dateValue = new Date(date);
+          if (isNaN(dateValue.getTime())) return;
+
+          const monthKey = dateValue.toISOString().slice(0, 7);
+          const existing = monthlyData.get(monthKey) || { arrear: 0, current: 0 };
+          existing.arrear += Number(d.demand_arrears || 0);
+          existing.current += Number(d.demand_current || 0);
+          monthlyData.set(monthKey, existing);
+        } catch (e) {
+          // Skip invalid dates
+        }
+      });
+
+      const timeSeriesData: TimeSeriesData[] = Array.from(monthlyData.entries())
+        .map(([month, data]) => ({
+          date: month,
+          arrear: data.arrear,
+          current: data.current,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      setTimeSeries(timeSeriesData);
+    } catch (error) {
+      console.error('Error loading time series:', error);
+    }
+  };
+
+  const loadTopDistricts = async () => {
+    try {
+      // Load DCB data from all district tables
+      let dcbData = await queryAllDistrictDCB(
+        'collection_total, _district_name, created_at, updated_at'
+      );
+
+      // Apply date filter
+      if (dateRange.from) {
+        const fromDate = dateRange.from.toISOString().split('T')[0];
+        dcbData = dcbData.filter((d: any) => {
+          const date = d.updated_at || d.created_at;
+          if (!date) return false;
+          try {
+            return new Date(date).toISOString().split('T')[0] >= fromDate;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+      if (dateRange.to) {
+        const toDate = dateRange.to.toISOString().split('T')[0];
+        const endDate = new Date(dateRange.to);
+        endDate.setDate(endDate.getDate() + 1);
+        const endDateStr = endDate.toISOString().split('T')[0];
+        dcbData = dcbData.filter((d: any) => {
+          const date = d.updated_at || d.created_at;
+          if (!date) return false;
+          try {
+            return new Date(date).toISOString().split('T')[0] <= endDateStr;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+
+      // Group by district and calculate totals
+      const districtTotals = new Map<string, number>();
+      dcbData.forEach((d: any) => {
+        if (d._district_name) {
+          const districtName = d._district_name;
+          const current = districtTotals.get(districtName) || 0;
+          const amount = Number(d.collection_total || 0);
+          districtTotals.set(districtName, current + amount);
+        }
+      });
+
+      const topDistrictsList = Array.from(districtTotals.entries())
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 10);
+
+      setTopDistricts(topDistrictsList);
+    } catch (error) {
+      console.error('Error loading top districts:', error);
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadDashboardData();
+    setRefreshing(false);
+  }, [loadDashboardData]);
+
+  const formatCurrency = (amount: number) => {
+    if (amount >= 10000000) {
+      return `₹${(amount / 10000000).toFixed(2)}Cr`;
+    }
+    if (amount >= 100000) {
+      return `₹${(amount / 100000).toFixed(2)}L`;
+    }
+    return `₹${amount.toLocaleString('en-IN')}`;
+  };
+
+  const formatNumber = (n: number) => {
+    return n.toLocaleString('en-IN');
+  };
+
+  const arrearVsCurrentData = useMemo(() => {
+    const labels =
+      timeSeries.length > 0
+        ? timeSeries.map((t) => {
+            const date = new Date(t.date + '-01');
+            return date.toLocaleDateString('en-US', { month: 'short' });
+          })
+        : ['No Data'];
+
+    return {
+      labels,
+      datasets: [
+        {
+          data: timeSeries.length > 0 ? timeSeries.map((t) => t.arrear) : [0],
+          color: () => theme.colors.chart[6],
+          strokeWidth: 3,
+        },
+        {
+          data: timeSeries.length > 0 ? timeSeries.map((t) => t.current) : [0],
+          color: () => theme.colors.primary,
+          strokeWidth: 3,
+        },
+      ],
+      legend: ['Arrear', 'Current'],
+    };
+  }, [timeSeries]);
+
+  const statusPieData = [
     {
-      id: 'district',
-      title: 'District-wise Summary',
-      description: 'View analytics and totals by district',
-      icon: 'map-outline',
-      color: '#003D99',
-      route: '/accounts/reports/district',
+      name: 'Pending',
+      population: statusBreakdown.pending || 1,
+      color: theme.colors.warning,
+      legendFontColor: theme.colors.text,
+      legendFontSize: 14,
+      legendFontFamily: 'Nunito-SemiBold',
     },
     {
-      id: 'institution',
-      title: 'Institution History',
-      description: 'View payment history for specific institutions',
-      icon: 'business-outline',
-      color: '#1A9D5C',
-      route: '/accounts/reports/institution',
+      name: 'Verified',
+      population: statusBreakdown.verified || 1,
+      color: theme.colors.success,
+      legendFontColor: theme.colors.text,
+      legendFontSize: 14,
+      legendFontFamily: 'Nunito-SemiBold',
     },
     {
-      id: 'inspector',
-      title: 'Inspector-wise Summary',
-      description: 'View collections and verification rates by inspector',
-      icon: 'people-outline',
-      color: '#FF9500',
-      route: '/accounts/reports/inspector',
-    },
-    {
-      id: 'export',
-      title: 'Export Reports',
-      description: 'Export data to CSV/Excel',
-      icon: 'download-outline',
-      color: '#8E8E93',
-      route: '/accounts/reports/export',
+      name: 'Rejected',
+      population: statusBreakdown.rejected || 1,
+      color: theme.colors.danger,
+      legendFontColor: theme.colors.text,
+      legendFontSize: 14,
+      legendFontFamily: 'Nunito-SemiBold',
     },
   ];
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.sectionTitle}>Available Reports</Text>
-      <Text style={styles.sectionDescription}>
-        Select a report type to view detailed analytics and summaries
-      </Text>
+  const topDistrictsData = {
+    labels: topDistricts.length > 0
+      ? topDistricts.map(d => d.name.length > 10 ? d.name.substring(0, 10) + '...' : d.name)
+      : ['No Data'],
+    datasets: [
+      {
+        data: topDistricts.length > 0
+          ? topDistricts.map(d => d.amount)
+          : [0],
+        color: () => theme.colors.secondary,
+      },
+    ],
+  };
 
-      <View style={styles.reportsGrid}>
-        {reportOptions.map((report) => (
-          <TouchableOpacity
-            key={report.id}
-            style={styles.reportCard}
-            onPress={() => router.push(report.route as any)}
-          >
-            <View style={[styles.iconContainer, { backgroundColor: report.color + '20' }]}>
-              <Ionicons name={report.icon as any} size={32} color={report.color} />
+  if (loading) {
+    return (
+      <Screen>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.secondary} />
+        </View>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen
+      scroll
+      scrollProps={{
+        refreshControl: <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.secondary} />,
+        showsVerticalScrollIndicator: true,
+        removeClippedSubviews: false,
+      }}
+    >
+      <View style={styles.page}>
+        <AppHeader
+          title="Reports"
+          subtitle="Accounts Overview"
+          rightActions={[
+            { icon: 'settings-outline', onPress: () => router.push('/accounts/settings'), accessibilityLabel: 'Settings' },
+          ]}
+        />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <FilterBar
+          dateRange={dateRange}
+          districtFilter={districtFilter}
+          districts={districts}
+          onDateRangeChange={setDateRange}
+          onDistrictChange={setDistrictFilter}
+        />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Executive overview</Text>
+        </View>
+
+        <View style={styles.kpiGrid}>
+          {[
+            {
+              title: 'Total collections',
+              value: formatNumber(metrics.total_collections),
+              icon: 'receipt-outline' as const,
+              color: theme.colors.secondary,
+            },
+            {
+              title: 'Total arrear',
+              value: formatCurrency(metrics.total_arrear),
+              icon: 'trending-up-outline' as const,
+              color: theme.colors.chart[6],
+            },
+            {
+              title: 'Total current',
+              value: formatCurrency(metrics.total_current),
+              icon: 'trending-down-outline' as const,
+              color: theme.colors.primary,
+            },
+            {
+              title: 'Pending',
+              value: formatNumber(metrics.pending_count),
+              icon: 'time-outline' as const,
+              color: theme.colors.warning,
+            },
+            {
+              title: 'Verified',
+              value: formatNumber(metrics.verified_count),
+              icon: 'checkmark-circle-outline' as const,
+              color: theme.colors.success,
+            },
+            {
+              title: 'Rejected',
+              value: formatNumber(metrics.rejected_count),
+              icon: 'close-circle-outline' as const,
+              color: theme.colors.danger,
+            },
+          ].map((kpi) => (
+            <Card key={kpi.title} style={styles.kpiCard}>
+              <View style={[styles.kpiIcon, { backgroundColor: `${kpi.color}15`, borderColor: `${kpi.color}30` }]}>
+                <Ionicons name={kpi.icon} size={18} color={kpi.color} />
+              </View>
+              <Text style={styles.kpiValue} numberOfLines={1}>
+                {kpi.value}
+              </Text>
+              <Text style={styles.kpiTitle} numberOfLines={1}>
+                {kpi.title}
+              </Text>
+            </Card>
+          ))}
+        </View>
+
+        <View style={{ height: theme.spacing.lg }} />
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Status breakdown</Text>
+        </View>
+
+        <Card style={styles.chartCard}>
+          {statusBreakdown.pending === 0 && statusBreakdown.verified === 0 && statusBreakdown.rejected === 0 ? (
+            <View style={styles.emptyChart}>
+              <Text style={styles.emptyChartText}>No data available</Text>
             </View>
-            <Text style={styles.reportTitle}>{report.title}</Text>
-            <Text style={styles.reportDescription}>{report.description}</Text>
-          </TouchableOpacity>
-        ))}
+          ) : (
+            <AnimatedChart
+              type="pie"
+              title=""
+              data={statusPieData}
+              height={220}
+            />
+          )}
+        </Card>
+
+        <View style={{ height: theme.spacing.lg }} />
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Arrear vs Current trend</Text>
+        </View>
+
+        <Card style={styles.chartCard}>
+          {timeSeries.length === 0 ? (
+            <View style={styles.emptyChart}>
+              <Text style={styles.emptyChartText}>No data available</Text>
+            </View>
+          ) : (
+            <AnimatedChart data={arrearVsCurrentData} type="line" />
+          )}
+        </Card>
+
+        <View style={{ height: theme.spacing.lg }} />
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Top districts by collection</Text>
+        </View>
+
+        <Card style={styles.chartCard}>
+          {topDistricts.length === 0 ? (
+            <View style={styles.emptyChart}>
+              <Text style={styles.emptyChartText}>No data available</Text>
+            </View>
+          ) : (
+            <AnimatedChart data={topDistrictsData} type="bar" />
+          )}
+        </Card>
+
+        <View style={{ height: theme.spacing.xl }} />
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  loadingContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  sectionDescription: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 24,
-  },
-  reportsGrid: {
-    gap: 16,
-  },
-  reportCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    backgroundColor: theme.colors.bg,
   },
-  reportTitle: {
-    fontSize: 18,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  sectionTitle: {
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
+    fontSize: 16,
+    color: theme.colors.text,
   },
-  reportDescription: {
-    fontSize: 14,
+  sectionHint: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  kpiCard: {
+    width: '48%',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.md,
+  },
+  kpiIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    marginBottom: theme.spacing.sm,
+  },
+  kpiValue: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 18,
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  kpiTitle: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+  chartCard: {
+    padding: theme.spacing.md,
+    minHeight: 240,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyChart: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyChartText: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 14,
+    color: theme.colors.muted,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

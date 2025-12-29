@@ -1,13 +1,11 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { theme } from '@/lib/theme';
 
 export default function CompareHomeScreen() {
   const router = useRouter();
@@ -40,111 +38,66 @@ export default function CompareHomeScreen() {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.sectionTitle}>Performance Comparisons</Text>
-      <Text style={styles.sectionDescription}>
-        Compare and rank districts, inspectors, and institutions
-      </Text>
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Compare" subtitle="Rank districts, inspectors, institutions" />
 
-      <View style={styles.optionsGrid}>
-        {compareOptions.map((option) => (
-          <TouchableOpacity
-            key={option.id}
-            style={styles.optionCard}
-            onPress={() => router.push(option.route as any)}
-          >
-            <View style={[styles.iconContainer, { backgroundColor: option.color + '20' }]}>
-              <Ionicons name={option.icon as any} size={40} color={option.color} />
-            </View>
-            <Text style={styles.optionTitle}>{option.title}</Text>
-            <Text style={styles.optionDescription}>{option.description}</Text>
-            <Ionicons name="chevron-forward" size={24} color={option.color} style={styles.arrowIcon} />
-          </TouchableOpacity>
-        ))}
+        <View style={{ height: theme.spacing.md }} />
+
+        <View style={styles.optionsGrid}>
+          {compareOptions.map((option) => (
+            <TouchableOpacity key={option.id} activeOpacity={0.85} onPress={() => router.push(option.route as any)}>
+              <Card style={styles.optionCard}>
+                <View style={[styles.iconContainer, { backgroundColor: option.color + '15', borderColor: option.color + '30' }]}>
+                  <Ionicons name={option.icon as any} size={22} color={option.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionTitle}>{option.title}</Text>
+                  <Text style={styles.optionDescription}>{option.description}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+              </Card>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  sectionDescription: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 24,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
   optionsGrid: {
-    gap: 16,
+    gap: theme.spacing.sm,
   },
   optionCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: theme.spacing.md,
   },
   iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    borderWidth: 1,
   },
   optionTitle: {
-    fontSize: 20,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-    textAlign: 'center',
+    fontSize: 15,
+    color: theme.colors.text,
+    marginBottom: 2,
   },
   optionDescription: {
-    fontSize: 14,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  arrowIcon: {
-    marginTop: 8,
+    fontSize: 12,
+    color: theme.colors.muted,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

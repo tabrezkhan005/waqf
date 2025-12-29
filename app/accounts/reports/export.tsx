@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { theme } from '@/lib/theme';
 
 export default function ExportReportsScreen() {
   const [exporting, setExporting] = useState(false);
@@ -49,125 +46,100 @@ export default function ExportReportsScreen() {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.sectionTitle}>Export Reports</Text>
-      <Text style={styles.sectionDescription}>
-        Select a report type to export data to CSV/Excel format
-      </Text>
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Export" subtitle="Reports" />
 
-      <View style={styles.exportOptions}>
+        <View style={{ height: theme.spacing.md }} />
+
         {exportOptions.map((option) => (
           <TouchableOpacity
             key={option.id}
-            style={styles.exportCard}
             onPress={() => handleExport(option.id)}
             disabled={exporting}
+            activeOpacity={0.85}
+            style={{ marginBottom: theme.spacing.sm }}
           >
-            <Ionicons name={option.icon as any} size={32} color="#FF9500" />
-            <Text style={styles.exportTitle}>{option.title}</Text>
-            <Text style={styles.exportDescription}>{option.description}</Text>
-            <Ionicons name="download-outline" size={24} color="#FF9500" style={styles.downloadIcon} />
+            <Card style={styles.rowCard}>
+              <View style={styles.rowLeft}>
+                <View style={styles.iconPill}>
+                  <Ionicons name={option.icon as any} size={18} color={theme.colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>{option.title}</Text>
+                  <Text style={styles.rowSubtitle}>{option.description}</Text>
+                </View>
+              </View>
+              <Ionicons name="download-outline" size={18} color={theme.colors.primary} />
+            </Card>
           </TouchableOpacity>
         ))}
-      </View>
 
-      <View style={styles.noteContainer}>
-        <Ionicons name="information-circle-outline" size={20} color="#8E8E93" />
-        <Text style={styles.noteText}>
-          Export functionality will be implemented using Supabase Edge Functions for secure server-side processing.
-        </Text>
+        <View style={{ height: theme.spacing.md }} />
+
+        <Card style={styles.noteCard}>
+          <Ionicons name="information-circle-outline" size={18} color={theme.colors.muted} />
+          <Text style={styles.noteText}>
+            Export can be implemented via Supabase Edge Functions (server-side CSV/Excel generation).
+          </Text>
+        </Card>
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
-  content: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  sectionDescription: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 24,
-  },
-  exportOptions: {
-    gap: 16,
-  },
-  exportCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    alignItems: 'center',
-  },
-  exportTitle: {
-    fontSize: 18,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  exportDescription: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  downloadIcon: {
-    marginTop: 8,
-  },
-  noteContainer: {
+  rowCard: {
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     flexDirection: 'row',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    flex: 1,
+    paddingRight: theme.spacing.sm,
+  },
+  iconPill: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.secondary + '12',
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: theme.colors.border,
+  },
+  rowTitle: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 14,
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  rowSubtitle: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+  noteCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
   },
   noteText: {
     flex: 1,
     fontSize: 12,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginLeft: 12,
+    color: theme.colors.muted,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

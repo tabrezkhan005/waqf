@@ -48,6 +48,28 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Announcements Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Communication</Text>
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => router.push('/admin/settings/announcements')}
+          >
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#0A7E4315' }]}>
+                <Ionicons name="megaphone-outline" size={24} color="#0A7E43" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemTitle}>Announcements</Text>
+                <Text style={styles.menuItemDescription}>
+                  Send notifications to inspectors and accounts
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#8E8E93" />
+          </TouchableOpacity>
+        </View>
+
         {/* Queries Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support</Text>
@@ -89,6 +111,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 100,
   },
   section: {
     marginBottom: 24,
@@ -192,28 +215,3 @@ const styles = StyleSheet.create({
     color: '#FF3B30',
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

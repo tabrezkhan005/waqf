@@ -1,137 +1,112 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase/client';
-import KPICard from '@/components/reports/KPICard';
 import AnimatedChart from '@/components/shared/AnimatedChart';
-import type { InstitutionMetrics } from '@/lib/types/database';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { theme } from '@/lib/theme';
+import { queryAllDistrictDCB, districtNameToTableName } from '@/lib/dcb/district-tables';
 
 export default function InstitutionDetailScreen() {
   const params = useLocalSearchParams();
+  const router = useRouter();
   const institutionId = params.institutionId as string | null;
+  const apGazetteNo = params.apGazetteNo as string | null;
 
   const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState<InstitutionMetrics | null>(null);
+  const [institution, setInstitution] = useState<{
+    id: string;
+    name: string;
+    ap_gazette_no: string | null;
+    district_id: string | null;
+    district_name: string | null;
+  } | null>(null);
+  const [dcbData, setDcbData] = useState<any | null>(null);
+  const [monthlyTotals, setMonthlyTotals] = useState<Array<{ month: string; total: number }>>([]);
 
   useEffect(() => {
-    if (institutionId) {
+    if (institutionId || apGazetteNo) {
       loadInstitutionData();
     }
-  }, [institutionId]);
+  }, [institutionId, apGazetteNo]);
 
   const loadInstitutionData = async () => {
-    if (!institutionId) return;
-
     try {
       setLoading(true);
 
       // Load institution
-      const { data: institution } = await supabase
-        .from('institutions')
-        .select(`
-          id,
-          name,
-          ap_gazette_no,
-          district:districts (
+      let institutionData: any = null;
+      if (institutionId) {
+        const { data, error } = await supabase
+          .from('institutions')
+          .select(`
             id,
-            name
-          )
-        `)
-        .eq('id', institutionId)
-        .single();
+            name,
+            ap_gazette_no,
+            district_id,
+            district:districts (
+              id,
+              name
+            )
+          `)
+          .eq('id', institutionId)
+          .single();
 
-      // Load DCB data for this institution
-      const { data: dcbData, error: dcbError } = await supabase
-        .from('institution_dcb')
-        .select(`
-          id,
-          demand_arrears,
-          demand_current,
-          demand_total,
-          collection_arrears,
-          collection_current,
-          collection_total,
-          balance_arrears,
-          balance_current,
-          balance_total,
-          financial_year,
-          created_at,
-          inspector:profiles!institution_dcb_inspector_id_fkey (
+        if (error) throw error;
+        institutionData = data;
+      } else if (apGazetteNo) {
+        // Search by AP Gazette No across all institutions
+        const { data, error } = await supabase
+          .from('institutions')
+          .select(`
             id,
-            full_name
-          )
-        `)
-        .eq('institution_id', institutionId)
-        .order('created_at', { ascending: false });
+            name,
+            ap_gazette_no,
+            district_id,
+            district:districts (
+              id,
+              name
+            )
+          `)
+          .eq('ap_gazette_no', apGazetteNo)
+          .single();
 
-      if (dcbError) {
-        console.error('Error loading DCB data:', dcbError);
+        if (error) throw error;
+        institutionData = data;
+      }
+
+      if (!institutionData) {
+        console.error('Institution not found');
         return;
       }
 
-      // Calculate totals from DCB data
-      const totalArrear = dcbData?.reduce(
-        (sum, d) => sum + Number(d.demand_arrears || 0),
-        0
-      ) || 0;
-
-      const totalCurrent = dcbData?.reduce(
-        (sum, d) => sum + Number(d.demand_current || 0),
-        0
-      ) || 0;
-
-      const totalCollection = dcbData?.reduce(
-        (sum, d) => sum + Number(d.collection_total || 0),
-        0
-      ) || 0;
-
-      // Status counts - DCB doesn't track verification status
-      const verified = 0;
-      const pending = dcbData?.length || 0;
-      const rejected = 0;
-
-      // Get date range
-      const dates = dcbData?.map(d => d.created_at).filter(Boolean) || [];
-      const firstDate = dates.length > 0 ? dates[dates.length - 1] : null;
-      const lastDate = dates.length > 0 ? dates[0] : null;
-
-      // Calculate outstanding balance (d_total - c_total)
-      const totalOutstanding = dcbData?.reduce(
-        (sum, d) => sum + (Number(d.d_total || 0) - Number(d.c_total || 0)),
-        0
-      ) || 0;
-
-      // Format collections for display
-      const collections = dcbData?.map((d, index) => ({
-        id: d.id,
-        collection_date: d.receipt_date || d.challan_date || d.created_at,
-        arrear_amount: Number(d.d_arrears || 0),
-        current_amount: Number(d.d_current || 0),
-        status: d.receipt_no || d.challan_no ? 'verified' : 'pending',
-        challan_no: d.challan_no,
-        receipt_no: d.receipt_no,
-        inspector: d.inspector_name ? { full_name: d.inspector_name } : null,
-      })) || [];
-
-      setMetrics({
-        institution_id: institutionId,
-        institution_name: institution?.name || 'Unknown',
-        institution_code: institution?.code || null,
-        district_name: institution?.district?.name || 'Unknown',
-        total_arrear: totalArrear,
-        total_current: totalCurrent,
-        total_outstanding: totalOutstanding,
-        collection_count: dcbData?.length || 0,
-        first_collection_date: firstDate,
-        last_collection_date: lastDate,
-        collections: collections as any,
+      const district = institutionData.district as { id: string; name: string } | null;
+      setInstitution({
+        id: institutionData.id,
+        name: institutionData.name,
+        ap_gazette_no: institutionData.ap_gazette_no,
+        district_id: institutionData.district_id,
+        district_name: district?.name || null,
       });
+
+      // Load DCB data from district-specific table
+      if (district?.name && institutionData.ap_gazette_no) {
+        const tableName = districtNameToTableName(district.name);
+        const { data: dcb, error: dcbError } = await supabase
+          .from(tableName)
+          .select('*')
+          .eq('ap_gazette_no', institutionData.ap_gazette_no)
+          .single();
+
+        if (dcbError && dcbError.code !== 'PGRST116') {
+          console.error('Error loading DCB data:', dcbError);
+        } else if (dcb) {
+          setDcbData(dcb);
+        }
+      }
     } catch (error) {
       console.error('Error loading institution data:', error);
     } finally {
@@ -146,303 +121,275 @@ export default function InstitutionDetailScreen() {
     return `₹${amount.toLocaleString('en-IN')}`;
   };
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'verified':
-        return '#1A9D5C';
-      case 'rejected':
-        return '#FF3B30';
-      case 'sent_to_accounts':
-        return '#FF9500';
-      default:
-        return '#8E8E93';
-    }
-  };
-
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#9C27B0" />
-      </View>
+      <Screen>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.secondary} />
+        </View>
+      </Screen>
     );
   }
 
-  if (!metrics) {
+  if (!institution) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Institution data not found</Text>
-      </View>
+      <Screen>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Institution not found</Text>
+        </View>
+      </Screen>
     );
   }
+
+  const demandArrears = Number(dcbData?.demand_arrears || 0);
+  const demandCurrent = Number(dcbData?.demand_current || 0);
+  const demandTotal = Number(dcbData?.demand_total || 0);
+  const collectionArrears = Number(dcbData?.collection_arrears || 0);
+  const collectionCurrent = Number(dcbData?.collection_current || 0);
+  const collectionTotal = Number(dcbData?.collection_total || 0);
+  const balanceArrears = Number(dcbData?.balance_arrears || 0);
+  const balanceCurrent = Number(dcbData?.balance_current || 0);
+  const balanceTotal = Number(dcbData?.balance_total || 0);
+
+  const collectionRate = demandTotal > 0 ? (collectionTotal / demandTotal) * 100 : 0;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.institutionName}>{metrics.institution_name}</Text>
-        {metrics.institution_code && (
-          <Text style={styles.institutionCode}>Code: {metrics.institution_code}</Text>
-        )}
-        <Text style={styles.districtName}>{metrics.district_name}</Text>
-      </View>
-
-      {/* Metrics */}
-      <View style={styles.section}>
-        <View style={styles.kpiGrid}>
-          <KPICard
-            title="Total Arrear"
-            value={formatCurrency(metrics.total_arrear)}
-            icon="trending-up-outline"
-            color="#FF6B35"
-          />
-          <KPICard
-            title="Total Current"
-            value={formatCurrency(metrics.total_current)}
-            icon="trending-down-outline"
-            color="#1A9D5C"
-          />
-          <KPICard
-            title="Collections"
-            value={metrics.collection_count}
-            icon="receipt-outline"
-            color="#9C27B0"
-          />
-          {metrics.total_outstanding > 0 && (
-            <KPICard
-              title="Outstanding"
-              value={formatCurrency(metrics.total_outstanding)}
-              icon="alert-circle-outline"
-              color="#FF9500"
-            />
-          )}
-        </View>
-      </View>
-
-      {/* Timeline Chart */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Collection Timeline</Text>
-        {metrics.collections.length > 0 ? (
-          <AnimatedChart
-            type="line"
-            title="Collections Over Time"
-            data={{
-              labels: metrics.collections.slice(0, 6).map((c, i) => {
-                const date = c.collection_date ? new Date(c.collection_date) : new Date();
-                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              }),
-              datasets: [
-                {
-                  data: metrics.collections.slice(0, 6).map((c) =>
-                    Number(c.arrear_amount || 0) + Number(c.current_amount || 0)
-                  ),
-                  color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`,
-                  strokeWidth: 3,
-                },
-              ],
-            }}
-            color="#9C27B0"
-            height={250}
-          />
-        ) : (
-          <View style={styles.chartCard}>
-            <Text style={styles.emptyText}>No collection timeline data</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Status Distribution */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Status Distribution</Text>
-        <AnimatedChart
-          type="pie"
-          title="Collections by Status"
-          data={[
-            {
-              name: 'Verified',
-              population: metrics.collections.filter((c) => c.status === 'verified').length || 1,
-              color: '#1A9D5C',
-              legendFontColor: '#2A2A2A',
-              legendFontSize: 14,
-            },
-            {
-              name: 'Pending',
-              population: metrics.collections.filter((c) => c.status === 'pending').length || 1,
-              color: '#FF9500',
-              legendFontColor: '#2A2A2A',
-              legendFontSize: 14,
-            },
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader
+          title={institution.name}
+          subtitle={institution.district_name || 'Unknown District'}
+          rightActions={[
+            { icon: 'search-outline', onPress: () => router.push('/reports/explore'), accessibilityLabel: 'Explore' },
           ]}
-          height={250}
         />
-      </View>
 
-      {/* History List */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Collection History</Text>
-        {metrics.collections.length > 0 ? (
-          metrics.collections.map((collection) => {
-            const total = Number(collection.arrear_amount || 0) + Number(collection.current_amount || 0);
-            return (
-              <View key={collection.id} style={styles.historyItem}>
-                <View style={styles.historyItemLeft}>
-                  <Text style={styles.historyDate}>{formatDate(collection.collection_date)}</Text>
-                  {collection.inspector && (
-                    <Text style={styles.historyInspector}>
-                      Inspector: {collection.inspector.full_name}
-                    </Text>
-                  )}
-                  <Text style={styles.historyAmount}>₹{total.toLocaleString('en-IN')}</Text>
-                  {collection.challan_no && (
-                    <Text style={styles.historyChallan}>Challan: {collection.challan_no}</Text>
-                  )}
-                  {collection.receipt_no && (
-                    <Text style={styles.historyChallan}>Receipt: {collection.receipt_no}</Text>
-                  )}
-                </View>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(collection.status) + '20' }]}>
-                  <Text style={[styles.statusText, { color: getStatusColor(collection.status) }]}>
-                    {collection.status.replace('_', ' ').toUpperCase()}
-                  </Text>
+        <View style={{ height: theme.spacing.md }} />
+
+        <View style={styles.kpiGrid}>
+          {[
+            { title: 'Demand Arrears', value: formatCurrency(demandArrears), icon: 'trending-up-outline' as const, color: theme.colors.danger },
+            { title: 'Demand Current', value: formatCurrency(demandCurrent), icon: 'trending-down-outline' as const, color: theme.colors.primary },
+            { title: 'Total Demand', value: formatCurrency(demandTotal), icon: 'cash-outline' as const, color: theme.colors.secondary },
+            { title: 'Collection Rate', value: `${collectionRate.toFixed(1)}%`, icon: 'stats-chart-outline' as const, color: theme.colors.success },
+          ].map((kpi) => (
+            <Card key={kpi.title} style={styles.kpiCard}>
+              <View style={styles.kpiTop}>
+                <View style={[styles.kpiIcon, { backgroundColor: `${kpi.color}15`, borderColor: `${kpi.color}30` }]}>
+                  <Ionicons name={kpi.icon} size={18} color={kpi.color} />
                 </View>
               </View>
-            );
-          })
-        ) : (
-          <Text style={styles.emptyText}>No collection history found</Text>
+              <Text style={styles.kpiValue}>{kpi.value}</Text>
+              <Text style={styles.kpiLabel}>{kpi.title}</Text>
+            </Card>
+          ))}
+        </View>
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <Card style={styles.dcbCard}>
+          <Text style={styles.sectionTitle}>DCB Summary</Text>
+          <View style={styles.dcbRow}>
+            <View style={styles.dcbItem}>
+              <Text style={styles.dcbLabel}>Collection Arrears</Text>
+              <Text style={styles.dcbValue}>{formatCurrency(collectionArrears)}</Text>
+            </View>
+            <View style={styles.dcbItem}>
+              <Text style={styles.dcbLabel}>Collection Current</Text>
+              <Text style={styles.dcbValue}>{formatCurrency(collectionCurrent)}</Text>
+            </View>
+          </View>
+          <View style={styles.dcbRow}>
+            <View style={styles.dcbItem}>
+              <Text style={styles.dcbLabel}>Total Collection</Text>
+              <Text style={[styles.dcbValue, { color: theme.colors.success }]}>{formatCurrency(collectionTotal)}</Text>
+            </View>
+            <View style={styles.dcbItem}>
+              <Text style={styles.dcbLabel}>Balance Total</Text>
+              <Text style={[styles.dcbValue, { color: theme.colors.danger }]}>{formatCurrency(balanceTotal)}</Text>
+            </View>
+          </View>
+        </Card>
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <Card style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Ionicons name="document-text-outline" size={20} color={theme.colors.muted} />
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>AP Gazette No</Text>
+              <Text style={styles.infoValue}>{institution.ap_gazette_no || 'N/A'}</Text>
+            </View>
+          </View>
+          {institution.district_name && (
+            <View style={styles.infoRow}>
+              <Ionicons name="location-outline" size={20} color={theme.colors.muted} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>District</Text>
+                <Text style={styles.infoValue}>{institution.district_name}</Text>
+              </View>
+            </View>
+          )}
+          {dcbData?.mandal && (
+            <View style={styles.infoRow}>
+              <Ionicons name="map-outline" size={20} color={theme.colors.muted} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Mandal</Text>
+                <Text style={styles.infoValue}>{dcbData.mandal}</Text>
+              </View>
+            </View>
+          )}
+          {dcbData?.village && (
+            <View style={styles.infoRow}>
+              <Ionicons name="home-outline" size={20} color={theme.colors.muted} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Village</Text>
+                <Text style={styles.infoValue}>{dcbData.village}</Text>
+              </View>
+            </View>
+          )}
+        </Card>
+
+        {dcbData?.remarks && (
+          <>
+            <View style={{ height: theme.spacing.md }} />
+            <Card style={styles.remarksCard}>
+              <Text style={styles.remarksLabel}>Remarks</Text>
+              <Text style={styles.remarksText}>{dcbData.remarks}</Text>
+            </Card>
+          </>
         )}
+
+        <View style={{ height: theme.spacing.xl }} />
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.bg,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.bg,
   },
   errorText: {
     fontSize: 16,
     fontFamily: 'Nunito-Regular',
-    color: '#FF3B30',
+    color: theme.colors.muted,
   },
-  header: {
-    marginBottom: 24,
-  },
-  institutionName: {
-    fontSize: 28,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  institutionCode: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 4,
-  },
-  districtName: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-  },
-  section: {
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 16,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 60,
   },
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -6,
+    gap: theme.spacing.sm,
   },
-  chartCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginBottom: 16,
+  kpiCard: {
+    width: '48%',
+    padding: theme.spacing.md,
   },
-  historyItem: {
+  kpiTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    justifyContent: 'flex-start',
+    marginBottom: theme.spacing.xs,
   },
-  historyItemLeft: {
+  kpiIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  kpiValue: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 18,
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  kpiLabel: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+  sectionTitle: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 16,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
+  },
+  dcbCard: {
+    padding: theme.spacing.lg,
+  },
+  dcbRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  dcbItem: {
     flex: 1,
   },
-  historyDate: {
+  dcbLabel: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 12,
+    color: theme.colors.muted,
+    marginBottom: 4,
+  },
+  dcbValue: {
+    fontFamily: 'Nunito-Bold',
     fontSize: 16,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 4,
+    color: theme.colors.text,
   },
-  historyInspector: {
-    fontSize: 12,
+  infoCard: {
+    padding: theme.spacing.lg,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  infoContent: {
+    flex: 1,
+  },
+  infoLabel: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 4,
-  },
-  historyAmount: {
-    fontSize: 18,
-    fontFamily: 'Nunito-Bold',
-    color: '#9C27B0',
-    marginBottom: 4,
-  },
-  historyChallan: {
     fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
+    marginBottom: 2,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  statusText: {
-    fontSize: 10,
+  infoValue: {
     fontFamily: 'Nunito-SemiBold',
-  },
-  emptyText: {
     fontSize: 14,
+    color: theme.colors.text,
+  },
+  remarksCard: {
+    padding: theme.spacing.lg,
+  },
+  remarksLabel: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 14,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.sm,
+  },
+  remarksText: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    textAlign: 'center',
-    padding: 16,
+    fontSize: 13,
+    color: theme.colors.muted,
+    lineHeight: 20,
   },
 });
+
+
+
+

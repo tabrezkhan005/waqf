@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Dimensions, Animated } from 'react-native';
 import { LineChart, BarChart, PieChart } from 'react-native-chart-kit';
+import { hexToRgb, theme } from '@/lib/theme';
 
 const screenWidth = Dimensions.get('window').width - 48;
 
@@ -16,7 +17,7 @@ export default function AnimatedChart({
   type,
   title,
   data,
-  color = '#003D99',
+  color = theme.colors.primary,
   height = 220,
 }: AnimatedChartProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -38,18 +39,19 @@ export default function AnimatedChart({
   }, []);
 
   const chartConfig = {
-    backgroundGradientFrom: '#FFFFFF',
-    backgroundGradientTo: '#FFFFFF',
+    backgroundGradientFrom: theme.colors.surface,
+    backgroundGradientTo: theme.colors.surface,
     decimalPlaces: 0,
     color: (opacity = 1) => {
-      // Use provided color or default
-      const rgb = color === '#003D99' ? '0, 61, 153' :
-                   color === '#9C27B0' ? '156, 39, 176' :
-                   color === '#1A9D5C' ? '26, 157, 92' :
-                   color === '#FF6B35' ? '255, 107, 53' : '0, 61, 153';
-      return `rgba(${rgb}, ${opacity})`;
+      const rgb = hexToRgb(color) || hexToRgb(theme.colors.primary);
+      if (!rgb) return `rgba(10, 126, 67, ${opacity})`;
+      return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
     },
-    labelColor: (opacity = 1) => `rgba(42, 42, 42, ${opacity})`,
+    labelColor: (opacity = 1) => {
+      const rgb = hexToRgb(theme.colors.muted);
+      if (!rgb) return `rgba(100, 116, 139, ${opacity})`;
+      return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
+    },
     style: {
       borderRadius: 16,
     },
@@ -60,7 +62,7 @@ export default function AnimatedChart({
     },
     propsForBackgroundLines: {
       strokeDasharray: '',
-      stroke: '#E5E5EA',
+      stroke: theme.colors.border,
       strokeWidth: 1,
     },
   };
@@ -68,18 +70,28 @@ export default function AnimatedChart({
   const renderChart = () => {
     try {
       // Validate and render line chart
-      if (type === 'line' && data && data.labels && Array.isArray(data.labels) && data.datasets && Array.isArray(data.datasets) && data.datasets[0] && Array.isArray(data.datasets[0].data)) {
+      if (
+        type === 'line' &&
+        data &&
+        data.labels &&
+        Array.isArray(data.labels) &&
+        data.datasets &&
+        Array.isArray(data.datasets) &&
+        data.datasets.length > 0
+      ) {
         const chartData = {
           labels: data.labels,
-          datasets: [
-            {
-              data: data.datasets[0].data.map((val: any) => Math.max(0, Math.round(Number(val) || 0))),
-            },
-          ],
+          datasets: data.datasets
+            .filter((ds: any) => ds && Array.isArray(ds.data))
+            .map((ds: any) => ({
+              ...ds,
+              data: ds.data.map((val: any) => Math.max(0, Math.round(Number(val) || 0))),
+            })),
+          legend: data.legend,
         };
 
         // Ensure we have valid data
-        if (chartData.datasets[0].data.length > 0 && chartData.labels.length > 0) {
+        if (chartData.datasets.length > 0 && chartData.labels.length > 0) {
           return (
             <LineChart
               data={chartData}
@@ -101,7 +113,16 @@ export default function AnimatedChart({
       }
 
       // Validate and render bar chart
-      if (type === 'bar' && data && data.labels && Array.isArray(data.labels) && data.datasets && Array.isArray(data.datasets) && data.datasets[0] && Array.isArray(data.datasets[0].data)) {
+      if (
+        type === 'bar' &&
+        data &&
+        data.labels &&
+        Array.isArray(data.labels) &&
+        data.datasets &&
+        Array.isArray(data.datasets) &&
+        data.datasets[0] &&
+        Array.isArray(data.datasets[0].data)
+      ) {
         const chartData = {
           labels: data.labels,
           datasets: [
@@ -172,7 +193,7 @@ export default function AnimatedChart({
       ]}
     >
       <View style={styles.chartCard}>
-        <Text style={styles.title}>{title}</Text>
+        {title ? <Text style={styles.title}>{title}</Text> : null}
         {renderChart()}
       </View>
     </Animated.View>
@@ -184,21 +205,17 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   chartCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
     borderWidth: 1,
-    borderColor: '#F0F0F0',
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   title: {
     fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#1F2937',
+    color: theme.colors.text,
     marginBottom: 18,
     letterSpacing: 0.3,
   },
@@ -214,6 +231,6 @@ const styles = StyleSheet.create({
   noDataText: {
     fontSize: 14,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
   },
 });

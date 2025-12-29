@@ -213,6 +213,7 @@ export default function InstitutionsListScreen() {
       {/* Institutions List */}
       <ScrollView
         style={styles.list}
+        contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {filteredInstitutions.length > 0 ? (
@@ -344,6 +345,9 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  listContent: {
+    paddingBottom: 100,
   },
   institutionCard: {
     backgroundColor: '#F7F9FC',

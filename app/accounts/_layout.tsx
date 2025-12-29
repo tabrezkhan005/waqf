@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Platform, View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
+import { theme } from '@/lib/theme';
 
 export default function AccountsLayout() {
   const { loading, profile } = useAuth();
@@ -19,12 +20,12 @@ export default function AccountsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#FF9500', // Orange
-        tabBarInactiveTintColor: '#8E8E93',
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: '#94A3B8',
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
+          backgroundColor: theme.colors.surface,
           borderTopWidth: 1,
-          borderTopColor: '#E5E5EA',
+          borderTopColor: theme.colors.border,
           height: Platform.OS === 'ios' ? 88 : 60,
           paddingBottom: Platform.OS === 'ios' ? 28 : 8,
           paddingTop: 8,
@@ -92,12 +93,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
+    backgroundColor: theme.colors.bg,
   },
   loadingText: {
     marginTop: 10,
     fontFamily: 'Nunito-Regular',
     fontSize: 16,
-    color: '#2A2A2A',
+    color: theme.colors.muted,
   },
 });

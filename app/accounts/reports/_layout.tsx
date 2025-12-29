@@ -4,15 +4,7 @@ export default function ReportsStack() {
   return (
     <Stack
       screenOptions={{
-        headerShown: true,
-        headerStyle: {
-          backgroundColor: '#FFFFFF',
-        },
-        headerTintColor: '#2A2A2A',
-        headerTitleStyle: {
-          fontFamily: 'Nunito-Bold',
-          fontSize: 18,
-        },
+        headerShown: false,
       }}
     >
       <Stack.Screen
@@ -48,28 +40,3 @@ export default function ReportsStack() {
     </Stack>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

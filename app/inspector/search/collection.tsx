@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase/client';
+import { queryDistrictDCB, districtNameToTableName, getDistrictName } from '@/lib/dcb/district-tables';
 import type { Institution, InstitutionWithDCB, InstitutionDCB } from '@/lib/types/database';
 
 export default function InstitutionCollectionScreen() {
@@ -38,10 +39,11 @@ export default function InstitutionCollectionScreen() {
   const [billReceipt, setBillReceipt] = useState<string | null>(null);
   const [transactionReceipt, setTransactionReceipt] = useState<string | null>(null);
 
-  // Computed values (use plural column names)
+  // Computed values
   const cTotal = (parseFloat(cArrear) || 0) + (parseFloat(cCurrent) || 0);
-  const bArrear = (dcb?.d_arrears || dcb?.d_arrear || 0) - (parseFloat(cArrear) || 0);
-  const bCurrent = (dcb?.d_current || 0) - (parseFloat(cCurrent) || 0);
+  // Balance = Demand - Collection
+  const bArrear = (dcb?.demand_arrears || 0) - (parseFloat(cArrear) || 0);
+  const bCurrent = (dcb?.demand_current || 0) - (parseFloat(cCurrent) || 0);
   const bTotal = bArrear + bCurrent;
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export default function InstitutionCollectionScreen() {
   }, [institutionId]);
 
   const loadInstitutionData = async () => {
-    if (!institutionId) return;
+    if (!institutionId || !profile?.district_id) return;
 
     try {
       setLoading(true);
@@ -69,46 +71,78 @@ export default function InstitutionCollectionScreen() {
         return;
       }
 
+      // Verify institution belongs to inspector's district
+      if (institutionData.district_id !== profile.district_id) {
+        Alert.alert('Error', 'This institution does not belong to your district');
+        return;
+      }
+
       setInstitution(institutionData);
 
-      // Load DCB (or create if doesn't exist)
+      // Get district name from inspector's district_id (more reliable)
+      // This ensures we use the inspector's assigned district, not the institution's
+      const districtName = await getDistrictName(profile.district_id);
+
+      if (!districtName) {
+        console.error('Error loading district for inspector');
+        Alert.alert('Error', 'District not found. Please contact admin.');
+        return;
+      }
+
+      // Load DCB from district-specific table using ap_gazette_no
+      const apGazetteNo = institutionData.ap_gazette_no;
+      if (!apGazetteNo) {
+        Alert.alert('Error', 'Institution AP Gazette No not found');
+        return;
+      }
+
+      const tableName = districtNameToTableName(districtName);
       const { data: dcbData, error: dcbError } = await supabase
-        .from('institution_dcb')
+        .from(tableName)
         .select('*')
-        .eq('institution_id', institutionId)
-        .eq('financial_year', '2024-25')
+        .eq('ap_gazette_no', apGazetteNo)
         .single();
 
       if (dcbError && dcbError.code !== 'PGRST116') {
         console.error('Error loading DCB:', dcbError);
+        // If DCB doesn't exist, that's okay - we'll show empty values
       }
 
       if (dcbData) {
-        setDcb(dcbData);
-        // Pre-fill collection values if they exist (use plural names)
-        setCArrear((dcbData.c_arrears || 0).toString());
-        setCCurrent((dcbData.c_current || 0).toString());
+        // Map district table data to expected format
+        const mappedDcb = {
+          ...dcbData,
+          ap_no: dcbData.ap_gazette_no,
+          institution_name: dcbData.institution_name,
+          district_name: districtName,
+          inspector_name: profile.full_name,
+        };
+        setDcb(mappedDcb as any);
+        // Pre-fill collection values if they exist
+        setCArrear((dcbData.collection_arrears || 0).toString());
+        setCCurrent((dcbData.collection_current || 0).toString());
         setRemarks(dcbData.remarks || '');
       } else {
-        // Create default DCB entry (demand values should be set by admin)
-        const { data: newDcb, error: createError } = await supabase
-          .from('institution_dcb')
-          .insert({
-            institution_id: institutionId,
-            financial_year: '2024-25',
-            d_arrears: 0,
-            d_current: 0,
-            c_arrears: 0,
-            c_current: 0,
-          })
-          .select()
-          .single();
-
-        if (createError) {
-          console.error('Error creating DCB:', createError);
-        } else {
-          setDcb(newDcb);
-        }
+        // DCB entry doesn't exist - show empty values
+        // The DCB should be created by admin during data import
+        const emptyDcb = {
+          ap_gazette_no: apGazetteNo,
+          institution_name: institutionData.name,
+          demand_arrears: 0,
+          demand_current: 0,
+          collection_arrears: 0,
+          collection_current: 0,
+          collection_total: 0,
+          balance_arrears: 0,
+          balance_current: 0,
+          balance_total: 0,
+          remarks: null,
+          ap_no: apGazetteNo,
+          institution_name: institutionData.name,
+          district_name: districtName,
+          inspector_name: profile.full_name,
+        };
+        setDcb(emptyDcb as any);
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -155,18 +189,18 @@ export default function InstitutionCollectionScreen() {
       return false;
     }
 
-    if (cArrearNum > (dcb?.d_arrears || dcb?.d_arrear || 0)) {
+    if (cArrearNum > (dcb?.demand_arrears || 0)) {
       Alert.alert(
         'Validation Error',
-        `Collection arrear (${cArrearNum}) cannot exceed demand arrear (${dcb?.d_arrears || dcb?.d_arrear || 0})`
+        `Collection arrear (${cArrearNum}) cannot exceed demand arrear (${dcb?.demand_arrears || 0})`
       );
       return false;
     }
 
-    if (cCurrentNum > (dcb?.d_current || 0)) {
+    if (cCurrentNum > (dcb?.demand_current || 0)) {
       Alert.alert(
         'Validation Error',
-        `Collection current (${cCurrentNum}) cannot exceed demand current (${dcb?.d_current || 0})`
+        `Collection current (${cCurrentNum}) cannot exceed demand current (${dcb?.demand_current || 0})`
       );
       return false;
     }
@@ -230,26 +264,53 @@ export default function InstitutionCollectionScreen() {
         );
       }
 
-      // Update DCB collection values (use plural names and include receipt info)
+      // Get district name and table name from inspector's district_id
+      if (!institution || !profile?.district_id) {
+        Alert.alert('Error', 'Missing institution or district information');
+        return;
+      }
+
+      const districtName = await getDistrictName(profile.district_id);
+      if (!districtName) {
+        Alert.alert('Error', 'District not found. Please contact admin.');
+        return;
+      }
+
+      const tableName = districtNameToTableName(districtName);
+      const apGazetteNo = institution.ap_gazette_no;
+
+      if (!apGazetteNo) {
+        Alert.alert('Error', 'Institution AP Gazette No not found');
+        return;
+      }
+
+      // Calculate totals and balances
+      const demandArrears = dcb?.demand_arrears || 0;
+      const demandCurrent = dcb?.demand_current || 0;
+      const demandTotal = demandArrears + demandCurrent;
+      const collectionTotal = cArrearNum + cCurrentNum;
+      const balanceArrears = demandArrears - cArrearNum;
+      const balanceCurrent = demandCurrent - cCurrentNum;
+      const balanceTotal = balanceArrears + balanceCurrent;
+
+      // Update DCB collection values in district-specific table
       const updateData: any = {
-        c_arrears: cArrearNum,
-        c_current: cCurrentNum,
+        collection_arrears: cArrearNum,
+        collection_current: cCurrentNum,
+        collection_total: collectionTotal,
+        balance_arrears: balanceArrears,
+        balance_current: balanceCurrent,
+        balance_total: balanceTotal,
         remarks: remarks.trim() || null,
       };
 
-      // Add receipt file paths if uploaded
-      if (billReceiptPath) {
-        updateData.receipt_file_path = billReceiptPath;
-      }
-      if (transactionReceiptPath) {
-        updateData.bank_receipt_file_path = transactionReceiptPath;
-      }
+      // Add receipt/challan dates if needed (these columns exist in district tables)
+      // Note: receiptno_date and challanno_date are text fields
 
       const { error: dcbError } = await supabase
-        .from('institution_dcb')
+        .from(tableName)
         .update(updateData)
-        .eq('institution_id', institutionId)
-        .eq('financial_year', '2024-25');
+        .eq('ap_gazette_no', apGazetteNo);
 
       if (dcbError) {
         console.error('Error updating DCB:', dcbError);
@@ -260,20 +321,22 @@ export default function InstitutionCollectionScreen() {
       // Create or update collection record
       const { data: existingCollection } = await supabase
         .from('collections')
-        .select('id')
+        .select('id, status')
         .eq('institution_id', institutionId)
         .eq('inspector_id', profile.id)
         .eq('collection_date', new Date().toISOString().split('T')[0])
         .single();
 
       if (existingCollection) {
-        // Update existing collection
+        // Update existing collection (preserve status if already sent)
         const { error: updateError } = await supabase
           .from('collections')
           .update({
             arrear_amount: cArrearNum,
             current_amount: cCurrentNum,
             total_amount: cArrearNum + cCurrentNum,
+            // Don't change status if already sent to accounts or verified/rejected
+            status: existingCollection.status === 'pending' ? 'pending' : existingCollection.status,
           })
           .eq('id', existingCollection.id);
 
@@ -361,6 +424,189 @@ export default function InstitutionCollectionScreen() {
     }
   };
 
+  const handleSendForReview = async () => {
+    if (!institutionId || !profile || !validateInputs()) return;
+
+    try {
+      setSaving(true);
+
+      const cArrearNum = parseFloat(cArrear);
+      const cCurrentNum = parseFloat(cCurrent);
+
+      // Upload images if selected
+      let billReceiptPath: string | null = null;
+      let transactionReceiptPath: string | null = null;
+
+      if (billReceipt) {
+        billReceiptPath = await uploadImage(
+          billReceipt,
+          `${profile.id}/${institutionId}/bill_${Date.now()}`
+        );
+      }
+
+      if (transactionReceipt) {
+        transactionReceiptPath = await uploadImage(
+          transactionReceipt,
+          `${profile.id}/${institutionId}/transaction_${Date.now()}`
+        );
+      }
+
+      // Get district name and table name from inspector's district_id
+      if (!institution || !profile?.district_id) {
+        Alert.alert('Error', 'Missing institution or district information');
+        return;
+      }
+
+      const districtName = await getDistrictName(profile.district_id);
+      if (!districtName) {
+        Alert.alert('Error', 'District not found. Please contact admin.');
+        return;
+      }
+
+      const tableName = districtNameToTableName(districtName);
+      const apGazetteNo = institution.ap_gazette_no;
+
+      if (!apGazetteNo) {
+        Alert.alert('Error', 'Institution AP Gazette No not found');
+        return;
+      }
+
+      // Calculate totals and balances
+      const demandArrears = dcb?.demand_arrears || 0;
+      const demandCurrent = dcb?.demand_current || 0;
+      const demandTotal = demandArrears + demandCurrent;
+      const collectionTotal = cArrearNum + cCurrentNum;
+      const balanceArrears = demandArrears - cArrearNum;
+      const balanceCurrent = demandCurrent - cCurrentNum;
+      const balanceTotal = balanceArrears + balanceCurrent;
+
+      // Update DCB collection values in district-specific table
+      const updateData: any = {
+        collection_arrears: cArrearNum,
+        collection_current: cCurrentNum,
+        collection_total: collectionTotal,
+        balance_arrears: balanceArrears,
+        balance_current: balanceCurrent,
+        balance_total: balanceTotal,
+        remarks: remarks.trim() || null,
+      };
+
+      const { error: dcbError } = await supabase
+        .from(tableName)
+        .update(updateData)
+        .eq('ap_gazette_no', apGazetteNo);
+
+      if (dcbError) {
+        console.error('Error updating DCB:', dcbError);
+        Alert.alert('Error', 'Failed to save collection data');
+        return;
+      }
+
+      // Create or update collection record with status 'sent_to_accounts'
+      const { data: existingCollection } = await supabase
+        .from('collections')
+        .select('id')
+        .eq('institution_id', institutionId)
+        .eq('inspector_id', profile.id)
+        .eq('collection_date', new Date().toISOString().split('T')[0])
+        .single();
+
+      if (existingCollection) {
+        // Update existing collection and send for review
+        const { error: updateError } = await supabase
+          .from('collections')
+          .update({
+            arrear_amount: cArrearNum,
+            current_amount: cCurrentNum,
+            total_amount: cArrearNum + cCurrentNum,
+            status: 'sent_to_accounts', // This will trigger notification
+          })
+          .eq('id', existingCollection.id);
+
+        if (updateError) {
+          console.error('Error updating collection:', updateError);
+          Alert.alert('Error', 'Failed to send collection for review');
+          return;
+        }
+
+        // Update receipts if uploaded
+        if (billReceiptPath) {
+          await supabase.from('receipts').upsert({
+            collection_id: existingCollection.id,
+            type: 'bill',
+            file_path: billReceiptPath,
+            file_name: `bill_${Date.now()}.jpg`,
+          });
+        }
+
+        if (transactionReceiptPath) {
+          await supabase.from('receipts').upsert({
+            collection_id: existingCollection.id,
+            type: 'transaction',
+            file_path: transactionReceiptPath,
+            file_name: `transaction_${Date.now()}.jpg`,
+          });
+        }
+      } else {
+        // Create new collection and send for review
+        const { data: newCollection, error: createError } = await supabase
+          .from('collections')
+          .insert({
+            institution_id: institutionId,
+            inspector_id: profile.id,
+            arrear_amount: cArrearNum,
+            current_amount: cCurrentNum,
+            total_amount: cArrearNum + cCurrentNum,
+            status: 'sent_to_accounts', // This will trigger notification
+            collection_date: new Date().toISOString().split('T')[0],
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.error('Error creating collection:', createError);
+          Alert.alert('Error', 'Failed to send collection for review');
+          return;
+        }
+
+        // Upload receipts
+        if (billReceiptPath && newCollection) {
+          await supabase.from('receipts').insert({
+            collection_id: newCollection.id,
+            type: 'bill',
+            file_path: billReceiptPath,
+            file_name: `bill_${Date.now()}.jpg`,
+          });
+        }
+
+        if (transactionReceiptPath && newCollection) {
+          await supabase.from('receipts').insert({
+            collection_id: newCollection.id,
+            type: 'transaction',
+            file_path: transactionReceiptPath,
+            file_name: `transaction_${Date.now()}.jpg`,
+          });
+        }
+      }
+
+      Alert.alert('Success', 'Collection sent for review. Accounts team will be notified.', [
+        {
+          text: 'View Collections',
+          onPress: () => router.push('/inspector/collections'),
+        },
+        {
+          text: 'OK',
+          onPress: () => router.back(),
+        },
+      ]);
+    } catch (error) {
+      console.error('Error sending collection for review:', error);
+      Alert.alert('Error', 'Failed to send collection for review');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -384,7 +630,7 @@ export default function InstitutionCollectionScreen() {
         <Text style={styles.sectionTitle}>Institution Details</Text>
         <View style={styles.infoCard}>
           <Text style={styles.infoLabel}>AP No</Text>
-          <Text style={styles.infoValue}>{(dcb as any)?.ap_no || institution.code || 'N/A'}</Text>
+          <Text style={styles.infoValue}>{(dcb as any)?.ap_no || institution.ap_gazette_no || 'N/A'}</Text>
         </View>
         <View style={styles.infoCard}>
           <Text style={styles.infoLabel}>Name</Text>
@@ -432,15 +678,15 @@ export default function InstitutionCollectionScreen() {
           <View style={styles.dcbRow}>
             <View style={styles.dcbItem}>
               <Text style={styles.dcbLabel}>D-Arrear</Text>
-              <Text style={styles.dcbValue}>₹{(dcb.d_arrears || dcb.d_arrear || 0).toLocaleString('en-IN')}</Text>
+              <Text style={styles.dcbValue}>₹{(dcb.demand_arrears || 0).toLocaleString('en-IN')}</Text>
             </View>
             <View style={styles.dcbItem}>
               <Text style={styles.dcbLabel}>D-Current</Text>
-              <Text style={styles.dcbValue}>₹{dcb.d_current.toLocaleString('en-IN')}</Text>
+              <Text style={styles.dcbValue}>₹{(dcb.demand_current || 0).toLocaleString('en-IN')}</Text>
             </View>
             <View style={styles.dcbItem}>
               <Text style={styles.dcbLabel}>D-Total</Text>
-              <Text style={styles.dcbValue}>₹{dcb.d_total.toLocaleString('en-IN')}</Text>
+              <Text style={styles.dcbValue}>₹{((dcb.demand_arrears || 0) + (dcb.demand_current || 0)).toLocaleString('en-IN')}</Text>
             </View>
           </View>
         </View>
@@ -547,21 +793,38 @@ export default function InstitutionCollectionScreen() {
         />
       </View>
 
-      {/* Save Button */}
-      <TouchableOpacity
-        style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-        onPress={handleSave}
-        disabled={saving}
-      >
-        {saving ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <>
-            <Ionicons name="checkmark-circle" size={24} color="#FFFFFF" />
-            <Text style={styles.saveButtonText}>Save Collection</Text>
-          </>
-        )}
-      </TouchableOpacity>
+      {/* Action Buttons */}
+      <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={[styles.saveButton, styles.saveButtonSecondary, saving && styles.saveButtonDisabled]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#1A9D5C" />
+          ) : (
+            <>
+              <Ionicons name="save-outline" size={20} color="#1A9D5C" />
+              <Text style={styles.saveButtonTextSecondary}>Save Draft</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+          onPress={handleSendForReview}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons name="send" size={20} color="#FFFFFF" />
+              <Text style={styles.saveButtonText}>Send for Review</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -742,10 +1005,28 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     opacity: 0.6,
   },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  saveButtonSecondary: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#1A9D5C',
+  },
   saveButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Nunito-Bold',
     color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  saveButtonTextSecondary: {
+    fontSize: 16,
+    fontFamily: 'Nunito-Bold',
+    color: '#1A9D5C',
+    marginLeft: 8,
   },
   remarksInput: {
     backgroundColor: '#F7F9FC',

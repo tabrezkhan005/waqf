@@ -17,7 +17,7 @@ export default function CollectionsStack() {
       <Stack.Screen
         name="index"
         options={{
-          title: 'Collections Overview',
+          headerShown: false,
         }}
       />
       <Stack.Screen

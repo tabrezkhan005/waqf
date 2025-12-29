@@ -1,17 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase/client';
 import AnimatedChart from '@/components/shared/AnimatedChart';
 import type { DistrictSummary } from '@/lib/types/database';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { Chip } from '@/components/ui/Chip';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { theme } from '@/lib/theme';
 
 export default function DistrictComparisonScreen() {
   const router = useRouter();
@@ -27,57 +26,51 @@ export default function DistrictComparisonScreen() {
   const loadDistrictData = async () => {
     try {
       setLoading(true);
-      const { data: districtsData } = await supabase
-        .from('districts')
-        .select('id, name')
-        .order('name');
 
-      if (!districtsData) return;
+      // Load districts and DCB data in parallel
+      const [{ data: districtRows }, dcbData] = await Promise.all([
+        supabase.from('districts').select('id, name').order('name'),
+        import('@/lib/dcb/district-tables').then(m => m.queryAllDistrictDCB(
+          'demand_arrears, demand_current, collection_arrears, collection_current, collection_total, _district_name'
+        ))
+      ]);
 
-      const summaries: DistrictSummary[] = [];
+      const byDistrict = new Map<string, DistrictSummary>();
 
-      for (const district of districtsData) {
-        // Get DCB data for this district (join through institutions)
-        const { data: dcbData } = await supabase
-          .from('institution_dcb')
-          .select(`
-            collection_arrears,
-            collection_current,
-            collection_total,
-            institution:institutions!institution_dcb_institution_id_fkey (
-              district_id
-            )
-          `)
-          .eq('institution.district_id', district.id);
-
-        // Calculate metrics from DCB data
-        const pending = dcbData?.length || 0;
-        const verified = 0; // DCB doesn't track verification status
-        const rejected = 0;
-        const verifiedAmount = 0; // DCB doesn't track verification status
-        const arrearAmount = dcbData?.reduce((sum, d) => sum + Number(d.collection_arrears || 0), 0) || 0;
-        const currentAmount = dcbData?.reduce((sum, d) => sum + Number(d.collection_current || 0), 0) || 0;
-
-        summaries.push({
-          district_id: district.id,
-          district_name: district.name,
-          pending_count: pending,
-          verified_count: verified,
-          rejected_count: rejected,
-          verified_amount: verifiedAmount,
-          arrear_amount: arrearAmount,
-          current_amount: currentAmount,
+      // Initialize all districts
+      (districtRows || []).forEach((d: any) => {
+        byDistrict.set(String(d.id), {
+          district_id: String(d.id),
+          district_name: d.name,
+          pending_count: 0,
+          verified_count: 0,
+          rejected_count: 0,
+          verified_amount: 0,
+          arrear_amount: 0,
+          current_amount: 0,
         });
-      }
+      });
 
-      // Sort by verified amount
-      summaries.sort((a, b) =>
-        sortOrder === 'desc'
-          ? b.verified_amount - a.verified_amount
-          : a.verified_amount - b.verified_amount
-      );
+      // Aggregate DCB data by district
+      dcbData.forEach((row: any) => {
+        if (!row._district_name) return;
 
-      setDistricts(summaries);
+        // Find district by name
+        const district = (districtRows || []).find((d: any) => d.name === row._district_name);
+        if (!district) return;
+
+        const key = String(district.id);
+        const existing = byDistrict.get(key);
+
+        if (existing) {
+          existing.pending_count += 1;
+          existing.arrear_amount += Number(row.demand_arrears || 0);
+          existing.current_amount += Number(row.demand_current || 0);
+          existing.verified_amount += Number(row.collection_total || 0);
+        }
+      });
+
+      setDistricts(Array.from(byDistrict.values()));
     } catch (error) {
       console.error('Error loading district data:', error);
     } finally {
@@ -92,226 +85,152 @@ export default function DistrictComparisonScreen() {
     return `₹${amount.toLocaleString('en-IN')}`;
   };
 
-  const displayDistricts = topN ? districts.slice(0, topN) : districts;
+  const displayDistricts = useMemo(() => {
+    const sorted = [...districts].sort((a, b) => {
+      return sortOrder === 'desc' ? b.verified_amount - a.verified_amount : a.verified_amount - b.verified_amount;
+    });
+    return topN ? sorted.slice(0, topN) : sorted;
+  }, [districts, sortOrder, topN]);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#9C27B0" />
-      </View>
+      <Screen>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.secondary} />
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Filters */}
-      <View style={styles.filtersContainer}>
-        <TouchableOpacity
-          style={[styles.filterChip, !topN && styles.filterChipActive]}
-          onPress={() => setTopN(null)}
-        >
-          <Text style={[styles.filterChipText, !topN && styles.filterChipTextActive]}>
-            All
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterChip, topN === 10 && styles.filterChipActive]}
-          onPress={() => setTopN(10)}
-        >
-          <Text style={[styles.filterChipText, topN === 10 && styles.filterChipTextActive]}>
-            Top 10
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterChip, sortOrder === 'desc' && styles.filterChipActive]}
-          onPress={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-        >
-          <Text style={[styles.filterChipText, sortOrder === 'desc' && styles.filterChipTextActive]}>
-            {sortOrder === 'desc' ? '↓ High to Low' : '↑ Low to High'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Compare" subtitle="Districts" />
 
-      {/* Chart */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>District Performance Comparison</Text>
+        <View style={{ height: theme.spacing.md }} />
+
+        <View style={styles.filtersRow}>
+          <Chip label="All" selected={!topN} onPress={() => setTopN(null)} />
+          <Chip label="Top 10" selected={topN === 10} onPress={() => setTopN(10)} />
+          <Chip
+            label={sortOrder === 'desc' ? '↓ High to Low' : '↑ Low to High'}
+            selected
+            onPress={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+          />
+        </View>
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <Text style={styles.sectionTitle}>District comparison</Text>
         {displayDistricts.length > 0 ? (
           <AnimatedChart
             type="bar"
-            title="District Comparison Chart"
+            title="Total collected by district"
             data={{
               labels: displayDistricts.slice(0, 10).map((d) =>
-                d.district_name.length > 8
-                  ? d.district_name.substring(0, 8) + '...'
-                  : d.district_name
+                d.district_name.length > 10 ? d.district_name.substring(0, 10) + '...' : d.district_name
               ),
-              datasets: [
-                {
-                  data: displayDistricts.slice(0, 10).map((d) => d.verified_amount),
-                },
-              ],
+              datasets: [{ data: displayDistricts.slice(0, 10).map((d) => d.verified_amount) }],
             }}
-            color="#9C27B0"
+            color={theme.colors.secondary}
             height={300}
           />
         ) : (
-          <View style={styles.chartCard}>
-            <Text style={styles.emptyText}>No district data available</Text>
-          </View>
+          <EmptyState title="No district data" description="No DCB entries found." icon="map-outline" />
         )}
-      </View>
 
-      {/* District List */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>District Rankings</Text>
+        <View style={{ height: theme.spacing.xl }} />
+
+        <Text style={styles.sectionTitle}>Rankings</Text>
         {displayDistricts.map((district, index) => (
           <TouchableOpacity
             key={district.district_id}
-            style={styles.districtCard}
+            activeOpacity={0.85}
             onPress={() => router.push(`/reports/explore/district?districtId=${district.district_id}`)}
+            style={{ marginBottom: theme.spacing.sm }}
           >
-            <View style={styles.rankBadge}>
-              <Text style={styles.rankText}>#{index + 1}</Text>
-            </View>
-            <View style={styles.districtCardContent}>
-              <Text style={styles.districtName}>{district.district_name}</Text>
-              <View style={styles.districtStats}>
-                <Text style={styles.statText}>
-                  Verified: {formatCurrency(district.verified_amount)}
-                </Text>
-                <Text style={styles.statText}>•</Text>
-                <Text style={styles.statText}>
-                  Pending: {district.pending_count}
-                </Text>
+            <Card style={styles.rowCard}>
+              <View style={styles.rowLeft}>
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankText}>#{index + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{district.district_name}</Text>
+                  <Text style={styles.rowSubtitle} numberOfLines={2}>
+                    Total: {formatCurrency(district.verified_amount)} • Entries: {district.pending_count}
+                    {'\n'}
+                    Arrear: {formatCurrency(district.arrear_amount)} • Current: {formatCurrency(district.current_amount)}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.amountBreakdown}>
-                <Text style={styles.breakdownText}>
-                  Arrear: {formatCurrency(district.arrear_amount)} | Current: {formatCurrency(district.current_amount)}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+            </Card>
           </TouchableOpacity>
         ))}
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.bg,
   },
-  filtersContainer: {
+  filtersRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 24,
     flexWrap: 'wrap',
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F7F9FC',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  filterChipActive: {
-    backgroundColor: '#9C27B0',
-    borderColor: '#9C27B0',
-  },
-  filterChipText: {
-    fontSize: 12,
-    fontFamily: 'Nunito-SemiBold',
-    color: '#8E8E93',
-  },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-  },
-  section: {
-    marginBottom: 32,
+    gap: theme.spacing.sm,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 16,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
-  chartCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginBottom: 16,
-  },
-  districtCard: {
+  rowCard: {
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    justifyContent: 'space-between',
+  },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
+    flex: 1,
+    paddingRight: theme.spacing.sm,
   },
   rankBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#9C27B0',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
   },
   rankText: {
-    fontSize: 18,
-    fontFamily: 'Nunito-Bold',
-    color: '#FFFFFF',
-  },
-  districtCardContent: {
-    flex: 1,
-  },
-  districtName: {
-    fontSize: 18,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  districtStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  statText: {
-    fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-  },
-  amountBreakdown: {
-    marginTop: 4,
-  },
-  breakdownText: {
-    fontSize: 11,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-  },
-  emptyText: {
     fontSize: 14,
+    fontFamily: 'Nunito-Bold',
+    color: theme.colors.surface,
+  },
+  rowTitle: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 15,
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  rowSubtitle: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    textAlign: 'center',
-    padding: 16,
+    fontSize: 12,
+    color: theme.colors.muted,
   },
 });

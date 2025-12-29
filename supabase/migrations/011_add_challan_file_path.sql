@@ -29,3 +29,11 @@ COMMENT ON COLUMN public.collections.challan_file_path IS 'Path to challan proof
 
 
 
+
+
+
+
+
+
+
+

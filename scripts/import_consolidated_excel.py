@@ -13,8 +13,17 @@ import re
 from typing import Dict, Optional, Tuple
 
 # Supabase configuration
-SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://foaawljhlrvltfiezuks.supabase.co')
-SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvYWF3bGpobHJ2bHRmaWV6dWtzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2Mzg0MzU2NiwiZXhwIjoyMDc5NDE5NTY2fQ.uL2nDmE0gtzUo4hgMGypTjq_x5ZEFiahEzOv4ZfBAHc')
+# IMPORTANT: Never hardcode service role keys in code. Use environment variables.
+SUPABASE_URL = os.getenv('SUPABASE_URL')
+SUPABASE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise SystemExit(
+        "[ERROR] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.\n"
+        "Example (PowerShell):\n"
+        "  $env:SUPABASE_URL='https://<project-ref>.supabase.co'\n"
+        "  $env:SUPABASE_SERVICE_ROLE_KEY='<service_role_key>'\n"
+    )
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)

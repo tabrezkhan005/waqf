@@ -18,6 +18,7 @@ export default function ReportsStack() {
         name="index"
         options={{
           title: 'Reports',
+          headerShown: false,
         }}
       />
       <Stack.Screen

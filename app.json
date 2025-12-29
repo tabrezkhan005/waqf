@@ -1,23 +1,32 @@
 {
   "expo": {
-    "name": "waqf",
-    "slug": "waqf",
+    "name": "WAQF DCB",
+    "slug": "waqf-dcb",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/waqf.png",
     "scheme": "waqf",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.waqf.dcb",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.waqf.dcb",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/waqf.png"
       },
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -38,11 +47,21 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "./plugins/with-fix-gradle.js"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7aecdd75-0957-4d07-a3c8-2069995fce64"
+      },
+      "supabaseUrl": "https://yznrasubypbdwhkhcgty.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6bnJhc3VieXBiZHdoa2hjZ3R5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY1NDYzMTksImV4cCI6MjA4MjEyMjMxOX0.RiRZl36Sw8wO7MrZAkKT1Ez7bDEn8tSc3b_CwHRRZQ0"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }

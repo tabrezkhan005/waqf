@@ -160,20 +160,40 @@ export default function AuthScreen() {
   useEffect(() => {
     if (session && profile && !authLoading) {
       // User is logged in, redirect to role-based router
-      console.log('Auth Screen - User authenticated, redirecting to role router. Role:', profile.role);
+      console.log('Auth Screen - User authenticated, redirecting to role router. Role:', profile.role, 'Profile ID:', profile.id);
 
       // Stop loading spinner
       setLoading(false);
 
-      // Use a small delay to ensure navigation is ready
-      const timer = setTimeout(() => {
+      // Redirect immediately - no delay needed
+      console.log('Auth Screen - Executing redirect to role router immediately');
+      console.log('Auth Screen - Profile state:', { role: profile.role, id: profile.id });
+
+      // Redirect based on role directly if we have it
+      if (profile.role === 'admin') {
+        console.log('Auth Screen - Direct redirect to /admin');
+        router.replace('/admin');
+      } else {
+        // For other roles, use role router
         router.replace('/_roleRouter');
-      }, 200);
-      return () => clearTimeout(timer);
+      }
     } else if (session && !profile && authLoading) {
       // Session exists but profile is still loading from AuthContext
       // Keep showing loading state
+      console.log('Auth Screen - Session exists, waiting for profile to load...');
       setLoading(true);
+    } else if (session && !profile && !authLoading) {
+      // Session exists but profile failed to load
+      // Give it a moment, then redirect anyway - let role router handle it
+      console.warn('Auth Screen - Session exists but profile is null after loading, redirecting anyway...');
+      const retryTimer = setTimeout(() => {
+        if (session && !profile) {
+          // Still no profile, but redirect anyway - role router will handle it
+          console.log('Auth Screen - Redirecting to role router despite missing profile');
+          router.replace('/_roleRouter');
+        }
+      }, 2000);
+      return () => clearTimeout(retryTimer);
     } else if (!session && !authLoading) {
       // No session and auth is not loading, ensure loading is false
       setLoading(false);

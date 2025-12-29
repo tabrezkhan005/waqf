@@ -1,18 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase/client';
-import KPICard from '@/components/reports/KPICard';
 import AnimatedChart from '@/components/shared/AnimatedChart';
 import type { DistrictMetrics } from '@/lib/types/database';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { theme } from '@/lib/theme';
+import { queryDistrictDCB } from '@/lib/dcb/district-tables';
 
 export default function DistrictDetailScreen() {
   const params = useLocalSearchParams();
@@ -22,6 +19,7 @@ export default function DistrictDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [district, setDistrict] = useState<{ id: string; name: string } | null>(null);
   const [metrics, setMetrics] = useState<DistrictMetrics | null>(null);
+  const [monthlyTotals, setMonthlyTotals] = useState<Array<{ month: string; total: number }>>([]);
 
   useEffect(() => {
     if (districtId) {
@@ -49,44 +47,16 @@ export default function DistrictDetailScreen() {
 
       setDistrict(districtData);
 
-      // Load DCB data for this district (join through institutions)
-      const { data: dcbData, error: dcbError } = await supabase
-        .from('institution_dcb')
-        .select(`
-          id,
-          institution_id,
-          demand_arrears,
-          demand_current,
-          demand_total,
-          collection_arrears,
-          collection_current,
-          collection_total,
-          balance_arrears,
-          balance_current,
-          balance_total,
-          financial_year,
-          created_at,
-          institution:institutions!institution_dcb_institution_id_fkey (
-            id,
-            name,
-            ap_gazette_no,
-            district_id
-          ),
-          inspector:profiles!institution_dcb_inspector_id_fkey (
-            id,
-            full_name
-          )
-        `)
-        .eq('institution.district_id', districtId)
-        .order('created_at', { ascending: true });
+      // Load DCB data from district-specific table
+      const dcbData = await queryDistrictDCB(
+        districtData.name,
+        'ap_gazette_no, institution_name, mandal, village, extent_dry, extent_wet, extent_total, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, remarks, created_at, updated_at'
+      );
 
-      if (dcbError) {
-        console.error('Error loading DCB data:', dcbError);
-        return;
-      }
+      const rows: any[] = dcbData || [];
 
-      // Count institutions (unique institution_ids)
-      const uniqueInstitutions = new Set(dcbData?.map(d => d.institution_id).filter(Boolean) || []);
+      // Count institutions (unique ap_gazette_no)
+      const uniqueInstitutions = new Set(rows.map((d) => d.ap_gazette_no).filter(Boolean) || []);
       const institutionsCount = uniqueInstitutions.size;
 
       // Count inspectors (from profiles table by district_id)
@@ -98,77 +68,71 @@ export default function DistrictDetailScreen() {
 
       // Calculate metrics from DCB data
       const verified = 0; // DCB doesn't track verification status
-      const pending = dcbData?.length || 0;
+      const pending = rows.length || 0;
       const rejected = 0; // DCB doesn't track rejected
+      const totalCollected = rows.reduce((sum, d: any) => sum + Number(d.collection_total || 0), 0);
 
-      const verifiedAmount = 0; // DCB doesn't track verification status
-
-      const arrearAmount = dcbData?.reduce(
+      const arrearAmount = rows.reduce(
         (sum, d: any) => sum + Number(d.demand_arrears || 0),
         0
-      ) || 0;
+      );
 
-      const currentAmount = dcbData?.reduce(
+      const currentAmount = rows.reduce(
         (sum, d: any) => sum + Number(d.demand_current || 0),
         0
-      ) || 0;
+      );
 
-      // Calculate top institutions
+      // Monthly totals (based on created_at)
+      const monthMap = new Map<string, number>();
+      rows.forEach((d: any) => {
+        if (!d.created_at) return;
+        const key = new Date(d.created_at).toISOString().slice(0, 7); // YYYY-MM
+        monthMap.set(key, (monthMap.get(key) || 0) + Number(d.collection_total || 0));
+      });
+      setMonthlyTotals(
+        Array.from(monthMap.entries())
+          .map(([month, total]) => ({ month, total }))
+          .sort((a, b) => a.month.localeCompare(b.month))
+          .slice(-12)
+      );
+
+      // Calculate top institutions (by ap_gazette_no)
       const institutionTotals = new Map<string, { name: string; total: number }>();
-      dcbData?.forEach((d: any) => {
-        if (d.institution_id && d.institution) {
-          const instId = d.institution_id;
-          const current = institutionTotals.get(instId) || {
-            name: d.institution.name || 'Unknown',
+      rows.forEach((d: any) => {
+        if (d.ap_gazette_no) {
+          const apNo = d.ap_gazette_no;
+          const current = institutionTotals.get(apNo) || {
+            name: d.institution_name || 'Unknown',
             total: 0
           };
           current.total += Number(d.collection_total || 0);
-          institutionTotals.set(instId, current);
+          institutionTotals.set(apNo, current);
         }
       });
 
       const topInstitutions = Array.from(institutionTotals.entries())
-        .map(([id, data]) => ({
-          institution_id: id,
+        .map(([apNo, data]) => ({
+          institution_id: apNo, // Using ap_gazette_no as identifier
           institution_name: data.name,
           total_collected: data.total
         }))
         .sort((a, b) => b.total_collected - a.total_collected)
         .slice(0, 5);
 
-      // Calculate top inspectors (by inspector_id from DCB)
-      const inspectorTotals = new Map<string, { name: string; total: number }>();
-      dcbData?.forEach((d: any) => {
-        if (d.inspector_id && d.inspector) {
-          const inspectorId = d.inspector_id;
-          const inspectorName = d.inspector.full_name || 'Unknown';
-          const current = inspectorTotals.get(inspectorId) || {
-            name: inspectorName,
-            total: 0
-          };
-          current.total += Number(d.collection_total || 0);
-          inspectorTotals.set(inspectorId, current);
-        }
-      });
-
-      // Get inspector IDs from profiles for navigation
-      const { data: inspectorProfiles } = await supabase
+      // Get inspector for this district
+      const { data: inspectorData } = await supabase
         .from('profiles')
         .select('id, full_name')
         .eq('district_id', districtId)
-        .eq('role', 'inspector');
+        .eq('role', 'inspector')
+        .single();
 
-      const topInspectors = Array.from(inspectorTotals.entries())
-        .map(([inspectorId, data]) => {
-          return {
-            inspector_id: inspectorId,
-            inspector_name: data.name,
-            total_collected: data.total,
-            verification_rate: 0, // DCB doesn't track verification status
-          };
-        })
-        .sort((a, b) => b.total_collected - a.total_collected)
-        .slice(0, 5);
+      const topInspectors = inspectorData ? [{
+        inspector_id: inspectorData.id,
+        inspector_name: inspectorData.full_name,
+        total_collected: totalCollected,
+        verification_rate: 0, // DCB doesn't track verification status
+      }] : [];
 
       setMetrics({
         district_id: districtId,
@@ -176,7 +140,7 @@ export default function DistrictDetailScreen() {
         pending_count: pending,
         verified_count: verified,
         rejected_count: rejected,
-        verified_amount: verifiedAmount,
+        verified_amount: totalCollected,
         arrear_amount: arrearAmount,
         current_amount: currentAmount,
         total_institutions: institutionsCount,
@@ -198,97 +162,85 @@ export default function DistrictDetailScreen() {
     return `₹${amount.toLocaleString('en-IN')}`;
   };
 
+  const monthlyChartData = useMemo(() => {
+    const labels = monthlyTotals.length > 0
+      ? monthlyTotals.map((m) => new Date(m.month + '-01').toLocaleDateString('en-US', { month: 'short' }))
+      : ['No Data'];
+    const points = monthlyTotals.length > 0 ? monthlyTotals.map((m) => m.total) : [0];
+    return {
+      labels,
+      datasets: [
+        {
+          data: points,
+          color: () => theme.colors.secondary,
+          strokeWidth: 3,
+        },
+      ],
+    };
+  }, [monthlyTotals]);
+
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#9C27B0" />
-      </View>
+      <Screen>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.secondary} />
+        </View>
+      </Screen>
     );
   }
 
   if (!district || !metrics) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>District data not found</Text>
-      </View>
+      <Screen>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>District data not found</Text>
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.districtName}>{district.name}</Text>
-        <Text style={styles.districtInfo}>
-          {metrics.total_institutions} Institutions • {metrics.total_inspectors} Inspectors
-        </Text>
-      </View>
-
-      {/* KPIs */}
-      <View style={styles.section}>
-        <View style={styles.kpiGrid}>
-          <KPICard
-            title="Total Arrear"
-            value={formatCurrency(metrics.arrear_amount)}
-            icon="trending-up-outline"
-            color="#FF6B35"
-          />
-          <KPICard
-            title="Total Current"
-            value={formatCurrency(metrics.current_amount)}
-            icon="trending-down-outline"
-            color="#1A9D5C"
-          />
-          <KPICard
-            title="Total Collections"
-            value={formatCurrency(metrics.verified_amount)}
-            icon="cash-outline"
-            color="#9C27B0"
-          />
-          <KPICard
-            title="Pending"
-            value={metrics.pending_count}
-            icon="time-outline"
-            color="#FF9500"
-          />
-          <KPICard
-            title="Verified"
-            value={metrics.verified_count}
-            icon="checkmark-circle-outline"
-            color="#1A9D5C"
-          />
-        </View>
-      </View>
-
-      {/* Monthly Trends Chart */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Monthly Trends</Text>
-        <AnimatedChart
-          type="line"
-          title="Collection Trends Over Time"
-          data={{
-            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-            datasets: [
-              {
-                data: [
-                  Math.max(0, Math.round(metrics.arrear_amount * 0.8)),
-                  Math.max(0, Math.round(metrics.arrear_amount * 0.85)),
-                  Math.max(0, Math.round(metrics.arrear_amount * 0.9)),
-                  Math.max(0, Math.round(metrics.arrear_amount * 0.95)),
-                  Math.max(0, Math.round(metrics.arrear_amount)),
-                  Math.max(0, Math.round(metrics.current_amount)),
-                ],
-              },
-            ],
-          }}
-          color="#FF6B35"
-          height={250}
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader
+          title={district.name}
+          subtitle={`${metrics.total_institutions} institutions • ${metrics.total_inspectors} inspectors`}
+          rightActions={[
+            { icon: 'search-outline', onPress: () => router.push('/reports/explore'), accessibilityLabel: 'Explore' },
+          ]}
         />
-      </View>
 
-      {/* Top Institutions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Top Institutions</Text>
+        <View style={{ height: theme.spacing.md }} />
+
+        <View style={styles.kpiGrid}>
+          {[
+            { title: 'Total arrear', value: formatCurrency(metrics.arrear_amount), icon: 'trending-up-outline' as const, color: theme.colors.chart[6] },
+            { title: 'Total current', value: formatCurrency(metrics.current_amount), icon: 'trending-down-outline' as const, color: theme.colors.primary },
+            { title: 'Total collected', value: formatCurrency(metrics.verified_amount), icon: 'cash-outline' as const, color: theme.colors.secondary },
+            { title: 'DCB entries', value: String(metrics.pending_count), icon: 'documents-outline' as const, color: theme.colors.warning },
+          ].map((kpi) => (
+            <Card key={kpi.title} style={styles.kpiCard}>
+              <View style={[styles.kpiIcon, { backgroundColor: `${kpi.color}15`, borderColor: `${kpi.color}30` }]}>
+                <Ionicons name={kpi.icon} size={18} color={kpi.color} />
+              </View>
+              <Text style={styles.kpiValue} numberOfLines={1}>
+                {kpi.value}
+              </Text>
+              <Text style={styles.kpiTitle} numberOfLines={1}>
+                {kpi.title}
+              </Text>
+            </Card>
+          ))}
+        </View>
+
+        <View style={{ height: theme.spacing.xl }} />
+
+        <Text style={styles.sectionTitle}>Monthly trends</Text>
+        <AnimatedChart type="line" title="Collected (monthly)" data={monthlyChartData} color={theme.colors.secondary} height={250} />
+
+        <View style={{ height: theme.spacing.xl }} />
+
+        <Text style={styles.sectionTitle}>Top institutions</Text>
         {metrics.top_institutions.length > 0 ? (
           <AnimatedChart
             type="bar"
@@ -305,41 +257,43 @@ export default function DistrictDetailScreen() {
                 },
               ],
             }}
-            color="#9C27B0"
+            color={theme.colors.secondary}
             height={250}
           />
         ) : (
-          <View style={styles.chartCard}>
-            <Text style={styles.emptyText}>No institution data available</Text>
-          </View>
+          <Text style={styles.emptyText}>No institution data available</Text>
         )}
         <View style={styles.listContainer}>
           {metrics.top_institutions.length > 0 ? (
             metrics.top_institutions.map((inst, index) => (
               <TouchableOpacity
                 key={inst.institution_id}
-                style={styles.listItem}
+                style={{ marginBottom: theme.spacing.sm }}
                 onPress={() => router.push(`/reports/explore/institution?institutionId=${inst.institution_id}`)}
+                activeOpacity={0.85}
               >
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankText}>#{index + 1}</Text>
-                </View>
-                <View style={styles.listItemContent}>
-                  <Text style={styles.listItemTitle}>{inst.institution_name}</Text>
-                  <Text style={styles.listItemSubtitle}>{formatCurrency(inst.total_collected)}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+                <Card style={styles.rowCard}>
+                  <View style={styles.rowLeft}>
+                    <View style={styles.rankBadge}>
+                      <Text style={styles.rankText}>#{index + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>{inst.institution_name}</Text>
+                      <Text style={styles.rowSubtitle} numberOfLines={1}>{formatCurrency(inst.total_collected)}</Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+                </Card>
               </TouchableOpacity>
             ))
           ) : (
             <Text style={styles.emptyText}>No institutions found</Text>
           )}
         </View>
-      </View>
 
-      {/* Top Inspectors */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Top Inspectors</Text>
+        <View style={{ height: theme.spacing.xl }} />
+
+        <Text style={styles.sectionTitle}>Top inspectors</Text>
         {metrics.top_inspectors.length > 0 ? (
           <AnimatedChart
             type="bar"
@@ -356,36 +310,39 @@ export default function DistrictDetailScreen() {
                 },
               ],
             }}
-            color="#1A9D5C"
+            color={theme.colors.primary}
             height={250}
           />
         ) : (
-          <View style={styles.chartCard}>
-            <Text style={styles.emptyText}>No inspector data available</Text>
-          </View>
+          <Text style={styles.emptyText}>No inspector data available</Text>
         )}
         <View style={styles.listContainer}>
           {metrics.top_inspectors.length > 0 ? (
             metrics.top_inspectors.map((insp, index) => (
               <TouchableOpacity
                 key={insp.inspector_id}
-                style={styles.listItem}
+                style={{ marginBottom: theme.spacing.sm }}
                 onPress={() => {
                   if (typeof insp.inspector_id === 'string' && insp.inspector_id !== 'Unknown') {
                     router.push(`/reports/explore/inspector?inspectorId=${insp.inspector_id}`);
                   }
                 }}
+                activeOpacity={0.85}
               >
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankText}>#{index + 1}</Text>
-                </View>
-                <View style={styles.listItemContent}>
-                  <Text style={styles.listItemTitle}>{insp.inspector_name}</Text>
-                  <Text style={styles.listItemSubtitle}>
-                    {formatCurrency(insp.total_collected)} • {insp.verification_rate.toFixed(1)}% verified
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+                <Card style={styles.rowCard}>
+                  <View style={styles.rowLeft}>
+                    <View style={[styles.rankBadge, { backgroundColor: theme.colors.primary }]}>
+                      <Text style={styles.rankText}>#{index + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>{insp.inspector_name}</Text>
+                      <Text style={styles.rowSubtitle} numberOfLines={1}>
+                        {formatCurrency(insp.total_collected)}
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+                </Card>
               </TouchableOpacity>
             ))
           ) : (
@@ -393,115 +350,114 @@ export default function DistrictDetailScreen() {
           )}
         </View>
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.bg,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.bg,
   },
   errorText: {
     fontSize: 16,
     fontFamily: 'Nunito-Regular',
-    color: '#FF3B30',
-  },
-  header: {
-    marginBottom: 24,
-  },
-  districtName: {
-    fontSize: 28,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  districtInfo: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-  },
-  section: {
-    marginBottom: 32,
+    color: theme.colors.danger,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 16,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -6,
+    gap: theme.spacing.sm,
   },
-  chartCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 16,
-    padding: 16,
+  kpiCard: {
+    width: '48%',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  kpiIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginBottom: 16,
+  },
+  kpiValue: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 16,
+    color: theme.colors.text,
+  },
+  kpiTitle: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 12,
+    color: theme.colors.muted,
   },
   listContainer: {
-    gap: 12,
+    marginTop: theme.spacing.sm,
   },
-  listItem: {
+  rowCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    justifyContent: 'space-between',
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
   },
   rankBadge: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#9C27B0',
+    backgroundColor: theme.colors.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   rankText: {
     fontSize: 16,
     fontFamily: 'Nunito-Bold',
-    color: '#FFFFFF',
+    color: theme.colors.surface,
   },
-  listItemContent: {
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
     flex: 1,
+    paddingRight: theme.spacing.sm,
   },
-  listItemTitle: {
-    fontSize: 16,
+  rowTitle: {
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 4,
+    fontSize: 15,
+    color: theme.colors.text,
+    marginBottom: 2,
   },
-  listItemSubtitle: {
-    fontSize: 12,
+  rowSubtitle: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    fontSize: 12,
+    color: theme.colors.muted,
   },
   emptyText: {
     fontSize: 14,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
     textAlign: 'center',
     padding: 16,
   },

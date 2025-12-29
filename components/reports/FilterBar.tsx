@@ -8,6 +8,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { theme } from '@/lib/theme';
 
 interface FilterBarProps {
   dateRange: {
@@ -16,7 +17,7 @@ interface FilterBarProps {
     to: Date | null;
   };
   districtFilter: string | null;
-  districts: Array<{ id: number; name: string }>;
+  districts: Array<{ id: string | number; name: string }>;
   onDateRangeChange: (range: { label: string; from: Date | null; to: Date | null }) => void;
   onDistrictChange: (districtId: string | null) => void;
 }
@@ -54,20 +55,20 @@ export default function FilterBar({
         style={styles.filterButton}
         onPress={() => setShowDateModal(true)}
       >
-        <Ionicons name="calendar-outline" size={20} color="#9C27B0" />
+        <Ionicons name="calendar-outline" size={20} color={theme.colors.secondary} />
         <Text style={styles.filterButtonText}>{dateRange.label}</Text>
-        <Ionicons name="chevron-down" size={16} color="#8E8E93" />
+        <Ionicons name="chevron-down" size={16} color={theme.colors.muted} />
       </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.filterButton}
         onPress={() => setShowDistrictModal(true)}
       >
-        <Ionicons name="map-outline" size={20} color="#9C27B0" />
+        <Ionicons name="map-outline" size={20} color={theme.colors.secondary} />
         <Text style={styles.filterButtonText}>
           {selectedDistrict ? selectedDistrict.name : 'All Districts'}
         </Text>
-        <Ionicons name="chevron-down" size={16} color="#8E8E93" />
+        <Ionicons name="chevron-down" size={16} color={theme.colors.muted} />
       </TouchableOpacity>
 
       {/* Date Range Modal */}
@@ -94,7 +95,7 @@ export default function FilterBar({
                 >
                   <Text style={styles.modalOptionText}>{range.label}</Text>
                   {dateRange.label === range.label && (
-                    <Ionicons name="checkmark" size={20} color="#9C27B0" />
+                    <Ionicons name="checkmark" size={20} color={theme.colors.secondary} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -127,7 +128,7 @@ export default function FilterBar({
                 }}
               >
                 <Text style={styles.modalOptionText}>All Districts</Text>
-                {!districtFilter && <Ionicons name="checkmark" size={20} color="#9C27B0" />}
+                {!districtFilter && <Ionicons name="checkmark" size={20} color={theme.colors.secondary} />}
               </TouchableOpacity>
               {districts.map((district) => (
                 <TouchableOpacity
@@ -140,7 +141,7 @@ export default function FilterBar({
                 >
                   <Text style={styles.modalOptionText}>{district.name}</Text>
                   {districtFilter === district.id.toString() && (
-                    <Ionicons name="checkmark" size={20} color="#9C27B0" />
+                    <Ionicons name="checkmark" size={20} color={theme.colors.secondary} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -156,28 +157,26 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.bg,
   },
   filterButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
     padding: 12,
     gap: 8,
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: theme.colors.border,
   },
   filterButtonText: {
     flex: 1,
     fontSize: 14,
     fontFamily: 'Nunito-SemiBold',
-    color: '#2A2A2A',
+    color: theme.colors.text,
   },
   modalOverlay: {
     flex: 1,
@@ -185,7 +184,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '80%',
@@ -197,12 +196,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: theme.colors.border,
   },
   modalTitle: {
     fontSize: 20,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
+    color: theme.colors.text,
   },
   modalOption: {
     flexDirection: 'row',
@@ -210,36 +209,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: theme.colors.border,
   },
   modalOptionText: {
     fontSize: 16,
     fontFamily: 'Nunito-Regular',
-    color: '#2A2A2A',
+    color: theme.colors.text,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

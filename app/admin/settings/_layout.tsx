@@ -32,6 +32,12 @@ export default function SettingsStack() {
           title: 'Query Details',
         }}
       />
+      <Stack.Screen
+        name="announcements"
+        options={{
+          title: 'Announcements',
+        }}
+      />
     </Stack>
   );
 }

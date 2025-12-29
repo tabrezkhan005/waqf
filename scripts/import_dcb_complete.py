@@ -14,7 +14,7 @@ from supabase import create_client, Client
 from datetime import datetime
 
 EXCEL_FILE = Path(__file__).parent.parent / "assets" / "DCB CODES-19-12-2025.xlsx"
-SUPABASE_URL = "https://foaawljhlrvltfiezuks.supabase.co"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
 
 # Try to get service role key from environment or .env file
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY")
@@ -35,6 +35,12 @@ if not SUPABASE_KEY:
                 elif line.startswith("SERVICE_ROLE_KEY="):
                     SUPABASE_KEY = line.split("=", 1)[1].strip()
                     break
+
+if not SUPABASE_URL:
+    print("[ERROR] SUPABASE_URL not found!")
+    print("Please add it to .env file as:")
+    print("  SUPABASE_URL=https://<project-ref>.supabase.co")
+    sys.exit(1)
 
 if not SUPABASE_KEY:
     print("[ERROR] SUPABASE_SERVICE_ROLE_KEY not found!")

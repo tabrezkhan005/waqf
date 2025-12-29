@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
+import { theme } from '@/lib/theme';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
 
 export default function ReportsProfileScreen() {
   const router = useRouter();
@@ -39,232 +35,204 @@ export default function ReportsProfileScreen() {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#9C27B0" />
-      </View>
-    );
-  }
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Profile Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Profile</Text>
-        <View style={styles.profileCard}>
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Settings" subtitle="Reports" />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <Card style={styles.profileCard}>
           <View style={styles.profileHeader}>
             <View style={styles.avatar}>
-              <Ionicons name="person" size={32} color="#9C27B0" />
+              <Text style={styles.avatarText}>{profile?.full_name?.charAt(0)?.toUpperCase() || 'R'}</Text>
             </View>
-            <View style={styles.profileInfo}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.profileName}>{profile?.full_name || 'Reports User'}</Text>
               <Text style={styles.profileRole}>Reports / CEO</Text>
             </View>
           </View>
-        </View>
 
-        <View style={styles.detailsCard}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Name</Text>
-            <Text style={styles.detailValue}>{profile?.full_name || 'N/A'}</Text>
+          <View style={{ height: theme.spacing.md }} />
+
+          <View style={styles.kvRow}>
+            <Text style={styles.kvKey}>Name</Text>
+            <Text style={styles.kvValue}>{profile?.full_name || '—'}</Text>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Role</Text>
-            <Text style={styles.detailValue}>Reports / CEO</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>User ID</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {profile?.id || 'N/A'}
+          <View style={styles.kvRowLast}>
+            <Text style={styles.kvKey}>User ID</Text>
+            <Text style={styles.kvValue} numberOfLines={1}>
+              {profile?.id || '—'}
             </Text>
           </View>
-        </View>
-      </View>
+        </Card>
 
-      {/* Actions Section */}
-      <View style={styles.section}>
+        <View style={{ height: theme.spacing.lg }} />
+
         <Text style={styles.sectionTitle}>Actions</Text>
+
+        <TouchableOpacity style={styles.actionRow} activeOpacity={0.8} onPress={() => router.push('/reports/settings/export')}>
+          <View style={styles.actionIcon}>
+            <Ionicons name="download-outline" size={18} color={theme.colors.secondary} />
+          </View>
+          <Text style={styles.actionText}>Export Center</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+        </TouchableOpacity>
+
+        <View style={{ height: theme.spacing.lg }} />
+
         <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => router.push('/reports/settings/export')}
+          style={[styles.logoutRow, loading && { opacity: 0.6 }]}
+          onPress={handleLogout}
+          activeOpacity={0.8}
+          disabled={loading}
         >
-          <Ionicons name="download-outline" size={24} color="#9C27B0" />
-          <Text style={styles.actionButtonText}>Export Center</Text>
-          <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+          <Ionicons name="log-out-outline" size={18} color={theme.colors.danger} />
+          <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
-      </View>
 
-      {/* Logout Section */}
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={{ height: theme.spacing.lg }} />
 
-      {/* App Info */}
-      <View style={styles.section}>
-        <Text style={styles.appInfoText}>Waqf Collection App</Text>
-        <Text style={styles.appInfoVersion}>Version 1.0.0</Text>
+        <Text style={styles.footerText}>Waqf Collection App</Text>
+        <Text style={styles.footerSubText}>Version 1.0.0</Text>
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  section: {
-    marginBottom: 24,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
   sectionTitle: {
-    fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 12,
+    fontSize: 14,
+    color: theme.colors.muted,
+    marginBottom: theme.spacing.sm,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   profileCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
   },
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: theme.spacing.md,
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#E1BEE7',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: `${theme.colors.secondary}15`,
+    borderWidth: 1,
+    borderColor: `${theme.colors.secondary}30`,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
   },
-  profileInfo: {
-    flex: 1,
+  avatarText: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 18,
+    color: theme.colors.secondary,
   },
   profileName: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: 2,
   },
   profileRole: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
   },
-  detailsCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginTop: 12,
-  },
-  detailRow: {
+  kvRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  kvRowLast: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: 'transparent',
   },
-  detailLabel: {
-    fontSize: 14,
+  kvKey: {
+    fontSize: 13,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
   },
-  detailValue: {
-    fontSize: 14,
+  kvValue: {
+    fontSize: 13,
     fontFamily: 'Nunito-SemiBold',
-    color: '#2A2A2A',
-    flex: 1,
+    color: theme.colors.text,
+    maxWidth: '60%',
     textAlign: 'right',
   },
-  actionButton: {
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    height: 54,
+    paddingHorizontal: theme.spacing.lg,
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: theme.colors.border,
+    gap: theme.spacing.md,
   },
-  actionButtonText: {
+  actionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: `${theme.colors.secondary}10`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: `${theme.colors.secondary}20`,
+  },
+  actionText: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'Nunito-SemiBold',
-    color: '#2A2A2A',
-    marginLeft: 12,
+    color: theme.colors.text,
   },
-  logoutButton: {
+  logoutRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF5F5',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: `${theme.colors.danger}0F`,
+    borderRadius: theme.radius.lg,
+    height: 54,
     borderWidth: 1,
-    borderColor: '#FFE5E5',
+    borderColor: `${theme.colors.danger}40`,
+    gap: 10,
   },
-  logoutButtonText: {
-    fontSize: 16,
+  logoutText: {
+    fontSize: 15,
     fontFamily: 'Nunito-Bold',
-    color: '#FF3B30',
-    marginLeft: 12,
+    color: theme.colors.danger,
   },
-  appInfoText: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+  footerText: {
+    fontFamily: 'Nunito-SemiBold',
+    fontSize: 13,
+    color: theme.colors.muted,
     textAlign: 'center',
-    marginBottom: 4,
   },
-  appInfoVersion: {
+  footerSubText: {
     fontSize: 12,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
     textAlign: 'center',
+    marginTop: 2,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

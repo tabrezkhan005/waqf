@@ -1,22 +1,36 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase/client';
+import { theme } from '@/lib/theme';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
 
 export default function InspectorSettingsScreen() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [districtName, setDistrictName] = useState<string>('—');
+
+  useEffect(() => {
+    const loadDistrict = async () => {
+      if (!profile?.district_id) {
+        setDistrictName('—');
+        return;
+      }
+      const { data } = await supabase
+        .from('districts')
+        .select('name')
+        .eq('id', profile.district_id)
+        .single();
+      setDistrictName(data?.name || '—');
+    };
+
+    loadDistrict();
+  }, [profile?.district_id]);
 
   const handleLogout = () => {
     Alert.alert(
@@ -40,245 +54,223 @@ export default function InspectorSettingsScreen() {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1A9D5C" />
-      </View>
-    );
-  }
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Profile Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Profile</Text>
-        <View style={styles.profileCard}>
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Settings" subtitle="Inspector" />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <Card style={styles.profileCard}>
           <View style={styles.profileHeader}>
             <View style={styles.avatar}>
-              <Ionicons name="person" size={32} color="#1A9D5C" />
+              <Text style={styles.avatarText}>{profile?.full_name?.charAt(0)?.toUpperCase() || 'I'}</Text>
             </View>
-            <View style={styles.profileInfo}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.profileName}>{profile?.full_name || 'Inspector'}</Text>
-              <Text style={styles.profileRole}>Inspector</Text>
+              <Text style={styles.profileRole}>Inspector • {districtName}</Text>
             </View>
           </View>
-        </View>
 
-        {/* Profile Details */}
-        <View style={styles.detailsCard}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Name</Text>
-            <Text style={styles.detailValue}>{profile?.full_name || 'N/A'}</Text>
+          <View style={{ height: theme.spacing.md }} />
+
+          <View style={styles.kvRow}>
+            <Text style={styles.kvKey}>Name</Text>
+            <Text style={styles.kvValue}>{profile?.full_name || '—'}</Text>
           </View>
-          {profile?.district_id && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>District</Text>
-              <Text style={styles.detailValue}>Loading...</Text>
-            </View>
-          )}
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>User ID</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {profile?.id || 'N/A'}
+          <View style={styles.kvRow}>
+            <Text style={styles.kvKey}>District</Text>
+            <Text style={styles.kvValue}>{districtName}</Text>
+          </View>
+          <View style={styles.kvRowLast}>
+            <Text style={styles.kvKey}>User ID</Text>
+            <Text style={styles.kvValue} numberOfLines={1}>
+              {profile?.id || '—'}
             </Text>
           </View>
-        </View>
-      </View>
+        </Card>
 
-      {/* Actions Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Actions</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/inspector/dashboard')}>
-          <Ionicons name="home-outline" size={24} color="#1A9D5C" />
-          <Text style={styles.actionButtonText}>Go to Dashboard</Text>
-          <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+        <View style={{ height: theme.spacing.lg }} />
+
+        <Text style={styles.sectionTitle}>Shortcuts</Text>
+
+        <TouchableOpacity style={styles.actionRow} activeOpacity={0.8} onPress={() => router.push('/inspector/dashboard')}>
+          <View style={styles.actionIcon}>
+            <Ionicons name="home-outline" size={18} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.actionText}>Go to Dashboard</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/inspector/search')}>
-          <Ionicons name="search-outline" size={24} color="#1A9D5C" />
-          <Text style={styles.actionButtonText}>Search Institutions</Text>
-          <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+        <TouchableOpacity style={styles.actionRow} activeOpacity={0.8} onPress={() => router.push('/inspector/search')}>
+          <View style={styles.actionIcon}>
+            <Ionicons name="search-outline" size={18} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.actionText}>Search Institutions</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/inspector/collections')}>
-          <Ionicons name="receipt-outline" size={24} color="#1A9D5C" />
-          <Text style={styles.actionButtonText}>View Collections</Text>
-          <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+        <TouchableOpacity style={styles.actionRow} activeOpacity={0.8} onPress={() => router.push('/inspector/collections')}>
+          <View style={styles.actionIcon}>
+            <Ionicons name="receipt-outline" size={18} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.actionText}>View Collections</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
         </TouchableOpacity>
-      </View>
 
-      {/* Logout Section */}
-      <View style={styles.section}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#FF3B30" />
-          <Text style={styles.logoutButtonText}>Logout</Text>
+        <View style={{ height: theme.spacing.lg }} />
+
+        <TouchableOpacity
+          style={[styles.logoutRow, loading && { opacity: 0.6 }]}
+          onPress={handleLogout}
+          activeOpacity={0.8}
+          disabled={loading}
+        >
+          <Ionicons name="log-out-outline" size={18} color={theme.colors.danger} />
+          <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
-      </View>
 
-      {/* App Info */}
-      <View style={styles.section}>
-        <Text style={styles.appInfoText}>Waqf Collection App</Text>
-        <Text style={styles.appInfoVersion}>Version 1.0.0</Text>
+        <View style={{ height: theme.spacing.lg }} />
+
+        <Text style={styles.footerText}>Waqf Collection App</Text>
+        <Text style={styles.footerSubText}>Version 1.0.0</Text>
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  section: {
-    marginBottom: 24,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
   sectionTitle: {
-    fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 12,
+    fontSize: 14,
+    color: theme.colors.muted,
+    marginBottom: theme.spacing.sm,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   profileCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
   },
   profileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: theme.spacing.md,
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#E8F5E9',
-    justifyContent: 'center',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: `${theme.colors.primary}15`,
+    borderWidth: 1,
+    borderColor: `${theme.colors.primary}30`,
     alignItems: 'center',
-    marginRight: 16,
+    justifyContent: 'center',
   },
-  profileInfo: {
-    flex: 1,
+  avatarText: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 18,
+    color: theme.colors.primary,
   },
   profileName: {
-    fontSize: 20,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 4,
+    fontSize: 18,
+    color: theme.colors.text,
+    marginBottom: 2,
   },
   profileRole: {
-    fontSize: 14,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    fontSize: 13,
+    color: theme.colors.muted,
   },
-  detailsCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginTop: 12,
-  },
-  detailRow: {
+  kvRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
   },
-  detailLabel: {
-    fontSize: 14,
+  kvRowLast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  kvKey: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    fontSize: 13,
+    color: theme.colors.muted,
   },
-  detailValue: {
-    fontSize: 14,
+  kvValue: {
     fontFamily: 'Nunito-SemiBold',
-    color: '#2A2A2A',
-    flex: 1,
+    fontSize: 13,
+    color: theme.colors.text,
+    maxWidth: '60%',
     textAlign: 'right',
   },
-  actionButton: {
+  actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.lg,
+    paddingHorizontal: theme.spacing.lg,
+    height: 54,
+    marginBottom: theme.spacing.sm,
+    gap: theme.spacing.md,
   },
-  actionButtonText: {
+  actionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: `${theme.colors.primary}10`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: `${theme.colors.primary}20`,
+  },
+  actionText: {
     flex: 1,
-    fontSize: 16,
     fontFamily: 'Nunito-SemiBold',
-    color: '#2A2A2A',
-    marginLeft: 12,
+    fontSize: 15,
+    color: theme.colors.text,
   },
-  logoutButton: {
+  logoutRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF5F5',
-    borderRadius: 12,
-    padding: 16,
+    height: 54,
+    borderRadius: theme.radius.lg,
     borderWidth: 1,
-    borderColor: '#FFE5E5',
+    borderColor: `${theme.colors.danger}40`,
+    backgroundColor: `${theme.colors.danger}0F`,
+    gap: 10,
   },
-  logoutButtonText: {
-    fontSize: 16,
+  logoutText: {
     fontFamily: 'Nunito-Bold',
-    color: '#FF3B30',
-    marginLeft: 12,
+    fontSize: 15,
+    color: theme.colors.danger,
   },
-  appInfoText: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+  footerText: {
     textAlign: 'center',
-    marginBottom: 4,
+    fontFamily: 'Nunito-SemiBold',
+    fontSize: 13,
+    color: theme.colors.muted,
   },
-  appInfoVersion: {
+  footerSubText: {
+    textAlign: 'center',
+    fontFamily: 'Nunito-Regular',
     fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    textAlign: 'center',
+    color: theme.colors.muted,
+    marginTop: 2,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

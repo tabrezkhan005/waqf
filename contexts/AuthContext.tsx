@@ -24,11 +24,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Activity tracking for inactivity timeout
-  const lastActivityTime = useRef<number>(Date.now());
-  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Activity tracking for background inactivity timeout
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const backgroundTimeRef = useRef<number | null>(null);
+  const backgroundTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 3 minutes in milliseconds
   const INACTIVITY_TIMEOUT = 3 * 60 * 1000;
@@ -36,6 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch user profile from database
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
+      if (!userId) {
+        console.warn('fetchProfile called with empty userId');
+        return null;
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, role, district_id, created_at')
@@ -43,10 +47,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (error) {
-        console.error('Error fetching profile:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
-        // If it's a schema error, try without .single() first
-        if (error.message?.includes('schema') || error.code === 'PGRST116') {
+        // Safely log error without causing console errors
+        const errorInfo = {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        };
+
+        // Only log if it's not a "no rows" error (which is expected for new users)
+        if (error.code !== 'PGRST116' && !error.message?.includes('No rows')) {
+          console.warn('Error fetching profile:', errorInfo);
+        }
+
+        // If it's a "no rows" error, try without .single()
+        if (error.code === 'PGRST116' || error.message?.includes('No rows')) {
           const { data: dataArray, error: arrayError } = await supabase
             .from('profiles')
             .select('id, full_name, role, district_id, created_at')
@@ -54,18 +69,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .limit(1);
 
           if (arrayError) {
-            console.error('Error fetching profile (array):', arrayError);
+            // Only log if it's a real error, not "no rows"
+            if (arrayError.code !== 'PGRST116' && !arrayError.message?.includes('No rows')) {
+              console.warn('Error fetching profile (array):', {
+                code: arrayError.code,
+                message: arrayError.message,
+              });
+            }
             return null;
           }
 
-          return dataArray && dataArray.length > 0 ? (dataArray[0] as Profile) : null;
+          if (dataArray && dataArray.length > 0) {
+            return dataArray[0] as Profile;
+          }
+          return null;
         }
         return null;
       }
 
-      return data as Profile;
-    } catch (error) {
-      console.error('Error fetching profile (catch):', error);
+      if (data) {
+        return data as Profile;
+      }
+
+      return null;
+    } catch (error: any) {
+      // Safely handle caught errors
+      const errorMessage = error?.message || 'Unknown error';
+      const errorName = error?.name || 'Error';
+      console.warn('Error fetching profile (catch):', {
+        name: errorName,
+        message: errorMessage,
+      });
       return null;
     }
   };
@@ -91,20 +125,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error('No user returned from authentication') };
       }
 
+      // Set session and user immediately
+      setSession(data.session);
+      setUser(data.user);
+
       // Fetch profile after successful authentication
-      const userProfile = await fetchProfile(data.user.id);
-      if (userProfile) {
-        setProfile(userProfile);
-        // Also set session and user immediately
-        setSession(data.session);
-        setUser(data.user);
-        lastActivityTime.current = Date.now();
+      // Try multiple times with retries (profile might be created by a trigger)
+      let retries = 0;
+      const maxRetries = 3;
+      let userProfile: Profile | null = null;
+
+      while (retries < maxRetries && !userProfile) {
+        try {
+          userProfile = await fetchProfile(data.user.id);
+          if (userProfile) {
+            setProfile(userProfile);
+            backgroundTimeRef.current = null;
+            setLoading(false);
+            console.log('Sign in successful - Profile loaded:', userProfile.role, 'ID:', userProfile.id);
+            break;
+          } else {
+            retries++;
+            if (retries < maxRetries) {
+              console.log(`Profile not found, retrying... (${retries}/${maxRetries})`);
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+            }
+          }
+        } catch (error) {
+          retries++;
+          console.warn(`Error fetching profile during sign in (attempt ${retries}):`, error);
+          if (retries < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+          }
+        }
+      }
+
+      if (!userProfile) {
+        console.warn('Profile not found after all retries for user:', data.user.id);
         setLoading(false);
-        console.log('Sign in successful - Profile loaded:', userProfile.role);
-      } else {
-        setLoading(false);
-        console.error('Failed to fetch profile after login');
-        return { error: new Error('Failed to load user profile') };
+        // Don't return error - let onAuthStateChange handle it
+        // The profile might be created by a trigger or needs to be created manually
+        // The auth screen will show "waiting for profile" and onAuthStateChange will retry
       }
 
       return { error: null };
@@ -118,61 +179,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Sign out
   const signOut = React.useCallback(async (): Promise<void> => {
     try {
-      // Clear inactivity timer
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-        inactivityTimerRef.current = null;
+      // Clear background timer
+      if (backgroundTimerRef.current) {
+        clearTimeout(backgroundTimerRef.current);
+        backgroundTimerRef.current = null;
       }
+      backgroundTimeRef.current = null;
 
       await supabase.auth.signOut();
       setSession(null);
       setUser(null);
       setProfile(null);
-      lastActivityTime.current = Date.now();
     } catch (error) {
       console.error('Sign out error:', error);
     }
   }, []);
 
-  // Check inactivity and log out if needed
-  const checkInactivity = React.useCallback(() => {
-    // Use refs to avoid dependency issues
-    const currentSession = session;
-    const currentUser = user;
-
-    if (!currentSession || !currentUser) {
-      return;
-    }
-
-    const now = Date.now();
-    const timeSinceLastActivity = now - lastActivityTime.current;
-
-    if (timeSinceLastActivity >= INACTIVITY_TIMEOUT) {
-      console.log('User inactive for 3+ minutes, logging out...');
-      signOut();
-    } else {
-      // Schedule next check
-      const remainingTime = INACTIVITY_TIMEOUT - timeSinceLastActivity;
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-      }
-      inactivityTimerRef.current = setTimeout(checkInactivity, remainingTime);
-    }
-  }, [session, user, signOut]);
-
-  // Update last activity time and restart inactivity timer
-  const updateActivity = React.useCallback(() => {
+  // Check background inactivity and log out if needed
+  const checkBackgroundInactivity = React.useCallback(() => {
     if (!session || !user) {
       return;
     }
-    lastActivityTime.current = Date.now();
-    backgroundTimeRef.current = null;
-    // Restart inactivity timer
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
+
+    // Only check if app is in background
+    if (appStateRef.current === 'active') {
+      // App is in foreground, don't logout
+      return;
     }
-    inactivityTimerRef.current = setTimeout(checkInactivity, INACTIVITY_TIMEOUT);
-  }, [session, user, checkInactivity]);
+
+    // App is in background, check time
+    if (backgroundTimeRef.current) {
+      const timeInBackground = Date.now() - backgroundTimeRef.current;
+      if (timeInBackground >= INACTIVITY_TIMEOUT) {
+        console.log('App was in background for 3+ minutes, logging out...');
+        signOut();
+      }
+    }
+  }, [session, user, signOut]);
+
+  // Update activity - only resets background timer when app comes to foreground
+  const updateActivity = React.useCallback(() => {
+    // This function is called when app comes to foreground
+    // Reset background time tracking
+    if (appStateRef.current === 'active') {
+      backgroundTimeRef.current = null;
+      if (backgroundTimerRef.current) {
+        clearTimeout(backgroundTimerRef.current);
+        backgroundTimerRef.current = null;
+      }
+    }
+  }, []);
 
   // Refresh profile
   const refreshProfile = async (): Promise<void> => {
@@ -184,21 +240,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state
   useEffect(() => {
+    let mounted = true;
+
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return;
+
       setSession(session);
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        fetchProfile(session.user.id).then((profile) => {
-          if (profile) {
+        try {
+          const profile = await fetchProfile(session.user.id);
+          if (mounted && profile) {
             setProfile(profile);
+            console.log('Initial profile loaded:', profile.role);
+          } else if (mounted) {
+            console.warn('Failed to load profile for user:', session.user.id);
+            setProfile(null);
           }
-        });
-        lastActivityTime.current = Date.now();
+        } catch (error) {
+          console.warn('Error loading initial profile:', error);
+          if (mounted) {
+            setProfile(null);
+          }
+        }
+        backgroundTimeRef.current = null;
+      } else {
+        setProfile(null);
       }
 
-      setLoading(false);
+      if (mounted) {
+        setLoading(false);
+      }
     });
 
     // Listen for auth changes
@@ -207,14 +281,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       // Ignore TOKEN_REFRESHED events - they don't indicate a real auth state change
       if (event === 'TOKEN_REFRESHED') {
-        // Only update session silently without triggering state changes or profile refetch
-        if (session) {
-          setSession(session);
-          // Update activity time on token refresh (inline to avoid closure issues)
-          lastActivityTime.current = Date.now();
-          backgroundTimeRef.current = null;
-        }
-        return;
+          // Only update session silently without triggering state changes or profile refetch
+          if (session) {
+            setSession(session);
+            // Don't reset background timer on token refresh - only on app state change
+          }
+          return;
       }
 
       console.log('Auth state changed:', event, 'Session:', !!session);
@@ -222,19 +294,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        const userProfile = await fetchProfile(session.user.id);
-        if (userProfile) {
-          setProfile(userProfile);
-          console.log('Profile loaded from auth state change:', userProfile.role);
+        // Always try to fetch profile on auth state change
+        // Try multiple times with delays
+        let retries = 0;
+        const maxRetries = 5;
+        let userProfile: Profile | null = null;
+
+        while (retries < maxRetries && !userProfile) {
+          try {
+            userProfile = await fetchProfile(session.user.id);
+            if (userProfile) {
+              setProfile(userProfile);
+              console.log('Profile loaded from auth state change:', userProfile.role);
+              break;
+            } else {
+              retries++;
+              if (retries < maxRetries) {
+                console.log(`Profile not found, retrying... (${retries}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+          } catch (error) {
+            retries++;
+            console.warn(`Error loading profile (attempt ${retries}):`, error);
+            if (retries < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
         }
-        lastActivityTime.current = Date.now();
+
+        if (!userProfile) {
+          console.warn('Profile not found after all retries for user:', session.user.id);
+          // Don't set to null - keep existing profile if any, or let it be null
+        }
+        backgroundTimeRef.current = null;
       } else {
         setProfile(null);
-        // Clear inactivity timer on logout
-        if (inactivityTimerRef.current) {
-          clearTimeout(inactivityTimerRef.current);
-          inactivityTimerRef.current = null;
+        // Clear background timer on logout
+        if (backgroundTimerRef.current) {
+          clearTimeout(backgroundTimerRef.current);
+          backgroundTimerRef.current = null;
         }
+        backgroundTimeRef.current = null;
       }
 
       setLoading(false);
@@ -242,25 +343,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Monitor app state changes (background/foreground)
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextAppState;
+
+      if (previousState.match(/inactive|background/) && nextAppState === 'active') {
         // App came to foreground
-        if (backgroundTimeRef.current) {
+        if (backgroundTimeRef.current && session && user) {
           const timeInBackground = Date.now() - backgroundTimeRef.current;
           if (timeInBackground >= INACTIVITY_TIMEOUT) {
             // User was in background for 3+ minutes, log them out
             console.log('App was in background for 3+ minutes, logging out...');
             signOut();
           } else {
-            // Update activity time and continue
-            updateActivity();
+            // Reset background timer since app is now active
+            backgroundTimeRef.current = null;
+            if (backgroundTimerRef.current) {
+              clearTimeout(backgroundTimerRef.current);
+              backgroundTimerRef.current = null;
+            }
           }
+        } else {
+          // No background time tracked, just reset
           backgroundTimeRef.current = null;
+          if (backgroundTimerRef.current) {
+            clearTimeout(backgroundTimerRef.current);
+            backgroundTimerRef.current = null;
+          }
         }
       } else if (nextAppState.match(/inactive|background/)) {
-        // App went to background
-        backgroundTimeRef.current = Date.now();
+        // App went to background - start tracking background time
+        if (session && user) {
+          backgroundTimeRef.current = Date.now();
+          // Set a timer to check after 3 minutes
+          if (backgroundTimerRef.current) {
+            clearTimeout(backgroundTimerRef.current);
+          }
+          backgroundTimerRef.current = setTimeout(() => {
+            checkBackgroundInactivity();
+          }, INACTIVITY_TIMEOUT);
+        }
       }
-      appStateRef.current = nextAppState;
     };
 
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
@@ -268,31 +390,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       subscription.unsubscribe();
       appStateSubscription.remove();
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
+      if (backgroundTimerRef.current) {
+        clearTimeout(backgroundTimerRef.current);
       }
     };
-  }, []);
+  }, [session, user, signOut, checkBackgroundInactivity]);
 
-  // Separate effect to manage inactivity timer based on session/user
+  // Clear background timer when user logs out
   useEffect(() => {
-    if (session && user) {
-      // Start inactivity timer when user is logged in
-      checkInactivity();
-    } else {
-      // Clear timer when logged out
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-        inactivityTimerRef.current = null;
+    if (!session || !user) {
+      // Clear background timer when logged out
+      if (backgroundTimerRef.current) {
+        clearTimeout(backgroundTimerRef.current);
+        backgroundTimerRef.current = null;
       }
+      backgroundTimeRef.current = null;
     }
-
-    return () => {
-      if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-      }
-    };
-  }, [session, user, checkInactivity]);
+  }, [session, user]);
 
   const value: AuthContextType = {
     session,

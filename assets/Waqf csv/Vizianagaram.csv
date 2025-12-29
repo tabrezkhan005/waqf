@@ -1,0 +1,56 @@
+ap_gazette_no,institution_name,village,mandal,extent_dry,extent_wet,extent_total,demand_arrears,demand_current,demand_total,receiptno_date,challanno_date,collection_arrears,collection_current,collection_total,balance_arrears,balance_current,balance_total,remarks,
+1,VZGZT0123,"Jamia Masjid
+As per SCR ""JAMIA MASJID SUNNI"" & As per GT ""MOSQUE"".","3 lamps, Phool Bagh Road, Vizianagaram","3 lamps, Phool Bagh Road, Vizianagaram",Nil,Nil,Nil,46352,86352,132704,"2804/57-21-05-2025, 2817/57/18-09-2025","220/29-05-2025,735/21-10-2025",46352,86352,132704,0,0,0,Subject to Audit
+2,VZGZT0004,Dargah Hazrath Khader Vali baba,"Baba Metta, Vizianagaram","Baba Metta, Vizianagaram","5.00, 3.55, 1.79",Nil,"5.00, 3.55, 1.79",18268,38268,56536,2814/57/15-07-2025,382/21-07-2025,18268,10000,28268,0,28268,28268,
+3,VZGZT0112,"Dargah
+As per SCR ""NYAMATH SHAVALI DARGAH"" and as per GT ""DARGAH"".","Ulli Veedhi, Vizianagaram Town","Ulli Veedhi, Vizianagaram Town",Nil,Nil,Nil,18050,18050,36100,"2806/57/10-06-2025, ",325/30-06-2025,18050,,18050,0,18050,18050,
+4,VZGZT0105,Palton Mosque,"Cantonment, Vizianagaram","Cantonment, Vizianagaram","12989 Sft, 7792 Sft, 18992 Sft",Nil,39773 Sft,20840,16500,37340,2802/57/15-05-2025,200/26-05-2025,20840,,20840,0,16500,16500,THE WAQF FUND ENHANCED FROM 1000/- TO 2500/-
+5,VZGZT0106,"Choti Masjid
+As per GT ""MOSQUE"" But As per SCR ""MOSQUE SUNNI ABAD MAHALLA CHOTI MASJID"").","Abadmohalla, Vizianagaram","Abadmohalla, Vizianagaram",Nil,Nil,Nil,0,15000,15000,,,,,0,0,15000,15000,Nominal Paying Waqf Fund
+6,VZGZT0104,"Memon Mosque
+(As per SCR ""MAIMAN SET MOSQUE SUNNI"") As per GT ""MOSQUE""","Santhapeta, Vizianagaram town","Santhapeta, Vizianagaram town",Nil,Nil,Nil,0,7000,7000,2809/57/02-07-2025,384/21-07-2025,,7000,7000,0,0,0,No Income
+7,VZGZT0118,Burial ground in Mastan Street,"Mastan Street, Vizianagaram","Mastan Street, Vizianagaram",2,Nil,2,3612,3612,7224,2803/57/15-05-2025,200/26-05-2025,3612,,3612,0,3612,3612,Survey to be conducted
+8,VZGZT0103,"Daikini Mosque
+(MOSQUE SUNNI DECCAN MAHALLA) As per SCR and But as per GT ""MOSQUE"".",Vizianagaram,Vizianagaram,Nil,Nil,Nil,0,3000,3000,2818/57/30-11-2025,865/09-12-2025,,3000,3000,0,0,0,
+9,VZGZT0110,"Dargah
+As per SCR ""DANKE SHA VALI DARGAH"" and as per GT ""DARGAH"".","Near Kota, Vizianagaram","Near Kota, Vizianagaram",Nil,Nil,Nil,0,3000,3000,2808/57/02-07-2025,384/21-07-2025,,3000,3000,0,0,0,the waqf fund enhanced from 3853/- TO 7000/-
+10,VZGZT0001 ,Burial ground,"Cantonment, Vizianagaram","Cantonment, Vizianagaram","31,367 Sft",,"31,367 Sft",0,2650,2650,2812/57/03-07-2025,384/21-07-2025,,2650,2650,0,0,0,No Income
+11,VZGZT0102,"New Mosque
+(MOSQUE SUNNI IN CANTONMENT) as per SCR & As per GT (MOSQUE)","Cantonment, Vizianagaram","Cantonment, Vizianagaram",Nil,Nil,Nil,0,2500,2500,2813/57/03-07-2025,384/21-07-2025,,2500,2500,0,0,0,Subject to Audit
+12,VZGZT0108,"Dargah
+As per SCR ""GANJA SHAHEED BABA DARGAH"" But As per GT ""DARGAH"".","Santhapeta, Vizianagaram town","Santhapeta, Vizianagaram town",Nil,Nil,Nil,0,2000,2000,2816/57/10-09-2025,734/21-10-2025,,2000,2000,0,0,0,Nominal Paying Waqf Fund
+13,VZGZT0109,"Dargah
+As per SCR""FAZUL SHA VALI DARGAH"" and Asper GT ""DARGAH"".","3 Lamps Road, Vizianagaram Town","3 Lamps Road, Vizianagaram Town",Nil,Nil,Nil,0,1500,1500,2811/57/02-07-2025,384/21-07-2025,,1500,1500,0,0,0,No Income
+14,VZWBU0001,Dargah Hazrath Sailani Baba,Vizianagaram,Vizianagaram,Nil,Nil,Nil,1000,1000,2000,"2805/57/22-05-2025, 2807/57/02-07-2025","221/29-05-2025, 383/21-07-2025",1000,1000,2000,0,0,0,The waqf fundto be enhanced after verfication of income and expenditure 
+15,VZGZT0114,"Zulefekar Astana Sunni
+","Near Ambatisatram, Vizianagaram","Near Ambatisatram, Vizianagaram",Nil,Nil,Nil,0,1000,1000,2815/57/31-07-2025,501/13-08-2025,,1000,1000,0,0,0,No Income
+16,VZGZT0122,"Dariya Khan Vali Drgah
+As per SCR ""DARIYA KHAN VALI DARGAH & as per GT ""DARGAH"".","Maharanipeta, Vizianagaram","Maharanipeta, Vizianagaram",Nil,Nil,Nil,0,840,840,2810/57/02-07-2025,384/21-07-2025,,840,840,0,0,0,
+17,VZGZT0001,"Jamia Mosque
+(MOSQUE SUNNI As per S.C R. and Gazette)",Bobbili,Bobbili,0,0,0,0,0,0,,,,,0,0,0,0,THE WAQF FUND ENHANCED FROM 5000/- TO 7000/-
+18,VZGZT0018,"Jamia Mosque, Rajam
+As per GT(MOSQUE) & As per SCR (MOSQUE SUNNI)",Rajam ,Rajam ,Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,
+19,VZGZT0072,"Moula Ali Panja
+as per G.T  & MOULA ALI PANJA SUNNI as per SCR",Srungavarapukota,Srungavarapukota,,"1.45, 1.86, 1.72",5.03,0,0,0,,,,,0,0,0,0,The recently the waqf fund enhanced as per rents
+20,VZGZT0107,"Idgah
+As per scr ""IDGAH SUNNI"" and As per  GT IDGAH""",Vizanagaram,Vizanagaram,Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,the waqf fund enhanced from 1000/- TO 1500/-
+21,VZGZT0111,"Dargah
+As per SCR ""KHUDRATHULLA HUSSAINI"" and GT ""DARGAH"".","Near RTC Complex, Vizianagaram","Near RTC Complex, Vizianagaram",Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,No Income
+22,VZGZT0113,"Dargah
+As per SCR ""MEER SHAVALI DARGAH"" and But As per GT ""GT"".","Near Mastan Street, Vizianagaram","Near Mastan Street, Vizianagaram",Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,the waqf fund enhanced from 500/- TO 1000/-
+23,VZGZT0115,"Astana
+As per GT & SCR ""KUMDAN PANJA""  ",Vizianagaram,Vizianagaram,Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,No Income
+24,VZGZT0116,Peerla Panja Sunni,Gajapathinagaram,Gajapathinagaram,Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,land in disput
+25,VZGZT0117,Khaja Sher Panja Sunni,"Ambatisatram, Viziangaram","Ambatisatram, Viziangaram",0.5,Nil,0.5,0,0,0,,,,,0,0,0,0,No Income
+26,VZGZT0119,"Panja Sha Graveyard
+As per SCR ""PANJASHA KHABARASTAN GRAVE YARD SUNNI"".",Vizianagaram,Vizianagaram,5,Nil,5,0,0,0,,,,,0,0,0,0,No Income
+27,VZGZT0120,"Mosque Sunni
+",Kumili,Kumili,Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,Survey to be conducted
+28,VZGZT0121,"Chilla 
+As per SCR ""CHILLA OF BABA FAREED SHAKKER GUNJ Rh"".
+As per GT ""CHILLAH"".","Jammunarayanapuram Village, Vizianagaram","Jammunarayanapuram Village, Vizianagaram",Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,
+29,VZGZT0001,"Shia Mosque
+As per GT ""MOSQUE SHIA""","Bondada Street, Vizianagaram","Bondada Street, Vizianagaram",Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,
+30,VZGZT0002 ,Hussaini Astana (Shia),"Bondada Street, Vizianagaram","Bondada Street, Vizianagaram",Nil,Nil,Nil,0,0,0,,,,,0,0,0,0,No Income
+31,VZROW0001,"Peerla Panja, fakeer Tank","Mastan Street, Vizianagaram","Mastan Street, Vizianagaram",27826 Sft,,27826 Sft,0,0,0,,,,,0,0,0,0,
+32,VZGZT0005,Dargah Hazrath Raheem Baba,"Baba metta, Vizianagaram","Baba metta, Vizianagaram",1333 Sq.Yrds,Nil,1333 Sq.Yrds,0,0,0,,,,,0,0,0,0,No Income Under Encroachment 

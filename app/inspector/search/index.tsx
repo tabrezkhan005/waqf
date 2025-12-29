@@ -1,19 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  ActivityIndicator,
-  FlatList,
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { Chip } from '@/components/ui/Chip';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Screen } from '@/components/ui/Screen';
+import { TextField } from '@/components/ui/TextField';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase/client';
-import type { Institution, InstitutionWithDistrict } from '@/lib/types/database';
+import { theme } from '@/lib/theme';
+import type { InstitutionWithDistrict } from '@/lib/types/database';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type FilterStatus = 'all' | 'pending' | 'completed';
 
@@ -27,38 +25,29 @@ export default function InstitutionSearchScreen() {
   );
   const [institutions, setInstitutions] = useState<InstitutionWithDistrict[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filteredInstitutions, setFilteredInstitutions] = useState<InstitutionWithDistrict[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [collectedInstitutionIds, setCollectedInstitutionIds] = useState<Set<string>>(new Set());
+  const [districtError, setDistrictError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Depend on stable keys to avoid reloading on every profile object identity change
     loadInstitutions();
-  }, [profile]);
-
-  useEffect(() => {
-    filterInstitutions();
-  }, [searchQuery, filterStatus, institutions]);
+  }, [profile?.district_id]);
 
   const loadInstitutions = async () => {
     if (!profile?.district_id) {
-      console.log('No district_id for inspector');
+      // Don't crash/logbox: show a clear message in the UI
+      setInstitutions([]);
+      setDistrictError('Your inspector account is not assigned to any district. Please contact admin.');
       return;
     }
 
     try {
       setLoading(true);
+      setDistrictError(null);
 
-      // First, get the district name
-      const { data: districtData } = await supabase
-        .from('districts')
-        .select('name')
-        .eq('id', profile.district_id)
-        .single();
-
-      if (!districtData) {
-        console.error('District not found for inspector');
-        return;
-      }
-
-      // Load institutions directly from institutions table filtered by district_id
+      // Load institutions filtered by inspector's district_id.
+      // Avoid querying `districts` separately here (can fail under RLS).
       const { data, error } = await supabase
         .from('institutions')
         .select(`
@@ -75,294 +64,225 @@ export default function InstitutionSearchScreen() {
 
       if (error) {
         console.error('Error loading institutions:', error);
+        setInstitutions([]);
+        setDistrictError('Unable to load institutions for your district. Please try again.');
         return;
       }
       setInstitutions((data as InstitutionWithDistrict[]) || []);
     } catch (error) {
       console.error('Error loading institutions:', error);
+      setInstitutions([]);
+      setDistrictError('Unable to load institutions. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const filterInstitutions = async () => {
+  const loadCollectionsIndex = async () => {
+    if (!profile?.id) return;
+    const { data } = await supabase
+      .from('collections')
+      .select('institution_id')
+      .eq('inspector_id', profile.id);
+    setCollectedInstitutionIds(new Set((data || []).map((c: any) => c.institution_id)));
+  };
+
+  useEffect(() => {
+    loadCollectionsIndex();
+  }, [profile?.id]);
+
+  const filteredInstitutions = useMemo(() => {
     let filtered = [...institutions];
 
-    // Apply search filter
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (inst) =>
-          inst.name?.toLowerCase().includes(query) ||
-          inst.code?.toLowerCase().includes(query) ||
-          (inst as any).dcb?.ap_no?.toLowerCase().includes(query) ||
-          (inst as any).dcb?.village?.toLowerCase().includes(query) ||
-          (inst as any).dcb?.mandal?.toLowerCase().includes(query)
-      );
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((inst: any) => {
+        return (
+          inst.name?.toLowerCase().includes(q) ||
+          inst.ap_gazette_no?.toLowerCase().includes(q) ||
+          inst.district?.name?.toLowerCase().includes(q)
+        );
+      });
     }
 
-    // Apply status filter
     if (filterStatus !== 'all') {
-      // Get institution IDs that have collections
-      const { data: collections } = await supabase
-        .from('collections')
-        .select('institution_id')
-        .eq('inspector_id', profile?.id || '');
-
-      const collectedInstitutionIds = new Set(
-        collections?.map((c) => c.institution_id) || []
-      );
-
       if (filterStatus === 'pending') {
         filtered = filtered.filter((inst) => !collectedInstitutionIds.has(inst.id));
-      } else if (filterStatus === 'completed') {
+      } else {
         filtered = filtered.filter((inst) => collectedInstitutionIds.has(inst.id));
       }
     }
 
-    setFilteredInstitutions(filtered);
+    return filtered;
+  }, [institutions, searchQuery, filterStatus, collectedInstitutionIds]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadInstitutions(), loadCollectionsIndex()]);
+    setRefreshing(false);
   };
 
-  const handleInstitutionPress = (institution: InstitutionWithDistrict) => {
-    router.push({
-      pathname: '/inspector/search/collection',
-      params: { institutionId: institution.id.toString() },
-    });
-  };
-
-  const renderInstitutionItem = ({ item }: { item: InstitutionWithDistrict }) => {
+  const renderItem = ({ item }: { item: InstitutionWithDistrict }) => {
+    const isCompleted = collectedInstitutionIds.has(item.id);
     return (
       <TouchableOpacity
-        style={styles.institutionCard}
-        onPress={() => handleInstitutionPress(item)}
+        activeOpacity={0.8}
+        onPress={() =>
+          router.push(
+            { pathname: '/inspector/search/collection', params: { institutionId: String(item.id) } } as any
+          )
+        }
+        style={{ marginBottom: theme.spacing.sm }}
       >
-        <View style={styles.institutionCardLeft}>
-          <Text style={styles.institutionName}>{item.name}</Text>
-          {item.code && (
-            <Text style={styles.institutionCode}>Code: {item.code}</Text>
-          )}
-          <View style={styles.institutionLocation}>
-            {item.district && (
-              <Text style={styles.locationText}>
-                {item.district.name}
+        <Card style={styles.rowCard}>
+          <View style={styles.rowTop}>
+            <View style={styles.rowLeft}>
+              <Text style={styles.instName} numberOfLines={1}>
+                {item.name}
               </Text>
-            )}
+              <Text style={styles.instMeta} numberOfLines={1}>
+                {item.ap_gazette_no ? `${item.ap_gazette_no} • ` : ''}
+                {item.district?.name || '—'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
           </View>
-        </View>
-        <View style={styles.institutionCardRight}>
-          <Ionicons name="chevron-forward" size={24} color="#8E8E93" />
-        </View>
+
+          <View style={styles.rowBottom}>
+            <View
+              style={[
+                styles.badge,
+                {
+                  backgroundColor: isCompleted ? `${theme.colors.primary}15` : `${theme.colors.secondary}15`,
+                  borderColor: isCompleted ? `${theme.colors.primary}30` : `${theme.colors.secondary}30`,
+                },
+              ]}
+            >
+              <Text style={[styles.badgeText, { color: isCompleted ? theme.colors.primary : theme.colors.secondary }]}>
+                {isCompleted ? 'Completed' : 'Pending'}
+              </Text>
+            </View>
+          </View>
+        </Card>
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by name or code..."
-          placeholderTextColor="#8E8E93"
+    <Screen>
+      <View style={styles.page}>
+        <AppHeader
+          title="Search"
+          subtitle="Institutions"
+          rightActions={[
+            { icon: 'settings-outline', onPress: () => router.push('/inspector/settings'), accessibilityLabel: 'Settings' },
+          ]}
+        />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <TextField
+          leftIcon="search-outline"
+          placeholder="Search by name, code, district..."
           value={searchQuery}
           onChangeText={setSearchQuery}
           autoCapitalize="none"
+          autoCorrect={false}
         />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color="#8E8E93" />
-          </TouchableOpacity>
-        )}
-      </View>
 
-      {/* Filter Buttons */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            filterStatus === 'all' && styles.filterButtonActive,
-          ]}
-          onPress={() => setFilterStatus('all')}
-        >
-          <Text
-            style={[
-              styles.filterButtonText,
-              filterStatus === 'all' && styles.filterButtonTextActive,
-            ]}
-          >
-            All
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            filterStatus === 'pending' && styles.filterButtonActive,
-          ]}
-          onPress={() => setFilterStatus('pending')}
-        >
-          <Text
-            style={[
-              styles.filterButtonText,
-              filterStatus === 'pending' && styles.filterButtonTextActive,
-            ]}
-          >
-            Pending
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            filterStatus === 'completed' && styles.filterButtonActive,
-          ]}
-          onPress={() => setFilterStatus('completed')}
-        >
-          <Text
-            style={[
-              styles.filterButtonText,
-              filterStatus === 'completed' && styles.filterButtonTextActive,
-            ]}
-          >
-            Completed
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Results */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#1A9D5C" />
+        <View style={styles.chipsRow}>
+          <Chip label="All" selected={filterStatus === 'all'} onPress={() => setFilterStatus('all')} />
+          <Chip label="Pending" selected={filterStatus === 'pending'} onPress={() => setFilterStatus('pending')} />
+          <Chip label="Completed" selected={filterStatus === 'completed'} onPress={() => setFilterStatus('completed')} />
         </View>
-      ) : filteredInstitutions.length > 0 ? (
+
         <FlatList
           data={filteredInstitutions}
-          renderItem={renderInstitutionItem}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContainer}
+          keyExtractor={(i) => String(i.id)}
+          renderItem={renderItem}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              // Keep pull-to-refresh strictly tied to user-initiated refresh state
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.primary}
+            />
+          }
+          ListEmptyComponent={
+            <EmptyState
+              title="No institutions found"
+              description={
+                districtError
+                  ? districtError
+                  : searchQuery
+                    ? 'Try a different keyword.'
+                    : 'Pull to refresh or check your district assignment.'
+              }
+              icon="search-outline"
+            />
+          }
         />
-      ) : (
-        <View style={styles.emptyState}>
-          <Ionicons name="search-outline" size={64} color="#8E8E93" />
-          <Text style={styles.emptyStateText}>
-            {searchQuery ? 'No institutions found' : 'No institutions available'}
-          </Text>
-        </View>
-      )}
-    </View>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  page: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
   },
-  searchContainer: {
+  chipsRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  listContent: {
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
+  },
+  rowCard: {
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+  },
+  rowTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    margin: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontFamily: 'Nunito-Regular',
-    color: '#2A2A2A',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    gap: 8,
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F7F9FC',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  filterButtonActive: {
-    backgroundColor: '#1A9D5C',
-    borderColor: '#1A9D5C',
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontFamily: 'Nunito-SemiBold',
-    color: '#8E8E93',
-  },
-  filterButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  listContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  institutionCard: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    gap: theme.spacing.sm,
   },
-  institutionCardLeft: {
+  rowLeft: {
     flex: 1,
   },
-  institutionName: {
-    fontSize: 16,
+  instName: {
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 4,
-  },
-  institutionCode: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 4,
-  },
-  institutionLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  locationText: {
-    fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-  },
-  institutionCardRight: {
-    marginLeft: 12,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyStateText: {
     fontSize: 16,
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  instMeta: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginTop: 16,
-    textAlign: 'center',
+    fontSize: 13,
+    color: theme.colors.muted,
+  },
+  rowBottom: {
+    marginTop: theme.spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+  },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  badgeText: {
+    fontFamily: 'Nunito-SemiBold',
+    fontSize: 12,
+    letterSpacing: 0.2,
   },
 });

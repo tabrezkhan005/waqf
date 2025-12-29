@@ -9,6 +9,7 @@ import { DialogProvider } from '@/contexts/DialogContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import * as Font from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import { requestEssentialPermissionsOnce } from '@/lib/permissions/runtime';
 
 // Keep splash visible while loading fonts
 SplashScreen.preventAutoHideAsync();
@@ -41,6 +42,12 @@ function RootLayoutNav() {
 
     loadFonts();
   }, []);
+
+  useEffect(() => {
+    if (!fontsLoaded) return;
+    // Ask once after first launch so exports & notifications work properly
+    requestEssentialPermissionsOnce().catch((e) => console.warn('Permission request failed:', e));
+  }, [fontsLoaded]);
 
   if (!fontsLoaded) {
     return null; // Splash screen is handled by app/index.tsx

@@ -1,17 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase/client';
 import AnimatedChart from '@/components/shared/AnimatedChart';
 import type { InspectorSummary } from '@/lib/types/database';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { theme } from '@/lib/theme';
 
 export default function InspectorPerformanceScreen() {
   const router = useRouter();
@@ -25,64 +23,75 @@ export default function InspectorPerformanceScreen() {
   const loadInspectorData = async () => {
     try {
       setLoading(true);
-      const { data: inspectorProfiles } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          full_name,
-          district:districts (
+
+      // Load inspectors and DCB data in parallel
+      const [{ data: inspectorRows }, dcbData] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select(`
             id,
-            name
-          )
-        `)
-        .eq('role', 'inspector')
-        .order('full_name');
+            full_name,
+            district_id,
+            district:districts (
+              name
+            )
+          `)
+          .eq('role', 'inspector')
+          .order('full_name'),
+        import('@/lib/dcb/district-tables').then(m => m.queryAllDistrictDCB(
+          'collection_arrears, collection_current, receiptno_date, challanno_date, _district_name'
+        ))
+      ]);
 
-      if (!inspectorProfiles) return;
+      const byInspector = new Map<string, InspectorSummary>();
 
-      const summaries: InspectorSummary[] = [];
-
-      for (const inspector of inspectorProfiles) {
-        // Load DCB data for this inspector
-        const { data: dcbData } = await supabase
-          .from('institution_dcb')
-          .select('d_arrears, d_current, receipt_no, challan_no')
-          .or(`inspector_name.eq.${inspector.full_name},district_name.eq.${inspector.district?.name}`);
-
-        const total = dcbData?.length || 0;
-        const verified = dcbData?.filter((d) => d.receipt_no || d.challan_no).length || 0;
-        const rejected = 0; // DCB doesn't track rejected
-        const pending = total - verified;
-
-        const totalArrear = dcbData?.reduce(
-          (sum, d) => sum + Number(d.d_arrears || 0),
-          0
-        ) || 0;
-
-        const totalCurrent = dcbData?.reduce(
-          (sum, d) => sum + Number(d.d_current || 0),
-          0
-        ) || 0;
-
-        const verificationRate = total > 0 ? (verified / total) * 100 : 0;
-
-        summaries.push({
-          inspector_id: inspector.id,
-          inspector_name: inspector.full_name,
-          district_name: inspector.district?.name || 'Unknown',
-          total_collections: total,
-          verified_count: verified,
-          rejected_count: rejected,
-          pending_count: pending,
-          total_arrear: totalArrear,
-          total_current: totalCurrent,
-          verification_rate: verificationRate,
+      // Initialize inspectors
+      (inspectorRows || []).forEach((insp: any) => {
+        byInspector.set(String(insp.id), {
+          inspector_id: String(insp.id),
+          inspector_name: insp.full_name || 'Unknown',
+          district_name: insp.district?.name || 'Unknown',
+          total_collections: 0,
+          verified_count: 0,
+          rejected_count: 0,
+          pending_count: 0,
+          total_arrear: 0,
+          total_current: 0,
+          verification_rate: 0,
         });
-      }
+      });
 
-      // Sort by total collected
+      // Aggregate DCB data by inspector's district
+      dcbData.forEach((row: any) => {
+        if (!row._district_name) return;
+
+        // Find inspector by district
+        const inspector = (inspectorRows || []).find((insp: any) =>
+          insp.district?.name === row._district_name
+        );
+
+        if (!inspector) return;
+
+        const key = String(inspector.id);
+        const existing = byInspector.get(key);
+
+        if (existing) {
+          existing.total_collections += 1;
+          existing.total_arrear += Number(row.collection_arrears || 0);
+          existing.total_current += Number(row.collection_current || 0);
+          if (row.receiptno_date || row.challanno_date) {
+            existing.verified_count += 1;
+          }
+        }
+      });
+
+      const summaries = Array.from(byInspector.values()).map((s) => {
+        const pending = s.total_collections - s.verified_count;
+        const verificationRate = s.total_collections > 0 ? (s.verified_count / s.total_collections) * 100 : 0;
+        return { ...s, pending_count: pending, verification_rate: verificationRate };
+      });
+
       summaries.sort((a, b) => (b.total_arrear + b.total_current) - (a.total_arrear + a.total_current));
-
       setInspectors(summaries);
     } catch (error) {
       console.error('Error loading inspector data:', error);
@@ -100,206 +109,132 @@ export default function InspectorPerformanceScreen() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#9C27B0" />
-      </View>
+      <Screen>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.secondary} />
+        </View>
+      </Screen>
     );
   }
 
+  const top10 = inspectors.slice(0, 10);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Chart */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Inspector Performance</Text>
-        {inspectors.length > 0 ? (
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Compare" subtitle="Inspectors" />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <Text style={styles.sectionTitle}>Top inspectors</Text>
+        {top10.length > 0 ? (
           <AnimatedChart
             type="bar"
-            title="Top Inspectors by Collection"
+            title="Total collected (top 10)"
             data={{
-              labels: inspectors.slice(0, 10).map((insp) =>
-                insp.inspector_name.length > 8
-                  ? insp.inspector_name.substring(0, 8) + '...'
-                  : insp.inspector_name
+              labels: top10.map((insp) =>
+                insp.inspector_name.length > 10 ? insp.inspector_name.substring(0, 10) + '...' : insp.inspector_name
               ),
-              datasets: [
-                {
-                  data: inspectors.slice(0, 10).map((insp) => insp.total_arrear + insp.total_current),
-                },
-              ],
+              datasets: [{ data: top10.map((insp) => insp.total_arrear + insp.total_current) }],
             }}
-            color="#9C27B0"
+            color={theme.colors.secondary}
             height={300}
           />
         ) : (
-          <View style={styles.chartCard}>
-            <Text style={styles.emptyText}>No inspector data available</Text>
-          </View>
+          <EmptyState title="No inspector data" description="No DCB entries found." icon="people-outline" />
         )}
-      </View>
 
-      {/* Leaderboard */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Inspector Rankings</Text>
+        <View style={{ height: theme.spacing.xl }} />
+
+        <Text style={styles.sectionTitle}>Rankings</Text>
         {inspectors.map((inspector, index) => {
           const totalCollected = inspector.total_arrear + inspector.total_current;
+          const badgeBg = index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : theme.colors.secondary;
+          const badgeText = index < 3 ? (index === 0 ? '1' : index === 1 ? '2' : '3') : String(index + 1);
           return (
             <TouchableOpacity
               key={inspector.inspector_id}
-              style={styles.leaderboardItem}
+              activeOpacity={0.85}
               onPress={() => router.push(`/reports/explore/inspector?inspectorId=${inspector.inspector_id}`)}
+              style={{ marginBottom: theme.spacing.sm }}
             >
-              <View style={styles.rankContainer}>
-                {index < 3 ? (
-                  <View style={[styles.medalBadge, index === 0 && styles.gold, index === 1 && styles.silver, index === 2 && styles.bronze]}>
-                    <Text style={styles.medalText}>
-                      {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+              <Card style={styles.rowCard}>
+                <View style={styles.rowLeft}>
+                  <View style={[styles.rankBadge, { backgroundColor: badgeBg }]}>
+                    <Text style={[styles.rankText, index < 3 && { color: '#111827' }]}>{badgeText}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>{inspector.inspector_name}</Text>
+                    <Text style={styles.rowSubtitle} numberOfLines={2}>
+                      {inspector.district_name} • Total: {formatCurrency(totalCollected)}
+                      {'\n'}
+                      Entries: {inspector.total_collections} • Verified: {inspector.verification_rate.toFixed(1)}%
                     </Text>
                   </View>
-                ) : (
-                  <View style={styles.rankBadge}>
-                    <Text style={styles.rankText}>#{index + 1}</Text>
-                  </View>
-                )}
-              </View>
-              <View style={styles.leaderboardContent}>
-                <Text style={styles.leaderboardName}>{inspector.inspector_name}</Text>
-                <Text style={styles.leaderboardDistrict}>{inspector.district_name}</Text>
-                <View style={styles.leaderboardStats}>
-                  <Text style={styles.statLabel}>Total:</Text>
-                  <Text style={styles.statValue}>{formatCurrency(totalCollected)}</Text>
-                  <Text style={styles.statDivider}>•</Text>
-                  <Text style={styles.statLabel}>Collections:</Text>
-                  <Text style={styles.statValue}>{inspector.total_collections}</Text>
-                  <Text style={styles.statDivider}>•</Text>
-                  <Text style={styles.statLabel}>Rate:</Text>
-                  <Text style={styles.statValue}>{inspector.verification_rate.toFixed(1)}%</Text>
                 </View>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+              </Card>
             </TouchableOpacity>
           );
         })}
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  section: {
-    marginBottom: 32,
+    backgroundColor: theme.colors.bg,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 16,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
   },
-  chartCard: {
-    backgroundColor: '#F7F9FC',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginBottom: 16,
-  },
-  leaderboardItem: {
+  rowCard: {
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    justifyContent: 'space-between',
   },
-  rankContainer: {
-    marginRight: 16,
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
+    flex: 1,
+    paddingRight: theme.spacing.sm,
   },
   rankBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#9C27B0',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   rankText: {
-    fontSize: 18,
+    fontSize: 14,
     fontFamily: 'Nunito-Bold',
-    color: '#FFFFFF',
+    color: theme.colors.surface,
   },
-  medalBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gold: {
-    backgroundColor: '#FFD700',
-  },
-  silver: {
-    backgroundColor: '#C0C0C0',
-  },
-  bronze: {
-    backgroundColor: '#CD7F32',
-  },
-  medalText: {
-    fontSize: 24,
-  },
-  leaderboardContent: {
-    flex: 1,
-  },
-  leaderboardName: {
-    fontSize: 18,
+  rowTitle: {
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
+    fontSize: 15,
+    color: theme.colors.text,
     marginBottom: 4,
   },
-  leaderboardDistrict: {
-    fontSize: 12,
+  rowSubtitle: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 8,
-  },
-  leaderboardStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flexWrap: 'wrap',
-  },
-  statLabel: {
     fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-  },
-  statValue: {
-    fontSize: 12,
-    fontFamily: 'Nunito-SemiBold',
-    color: '#2A2A2A',
-  },
-  statDivider: {
-    fontSize: 12,
-    color: '#8E8E93',
-  },
-  emptyText: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    textAlign: 'center',
-    padding: 16,
+    color: theme.colors.muted,
   },
 });

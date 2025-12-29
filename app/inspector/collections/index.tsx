@@ -1,89 +1,105 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  TextInput,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase/client';
-import type { Collection, CollectionWithRelations } from '@/lib/types/database';
+import type { CollectionWithRelations } from '@/lib/types/database';
+import { theme } from '@/lib/theme';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { Chip } from '@/components/ui/Chip';
+import { TextField } from '@/components/ui/TextField';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function CollectionsListScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [collections, setCollections] = useState<CollectionWithRelations[]>([]);
-  const [filteredCollections, setFilteredCollections] = useState<CollectionWithRelations[]>([]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
     loadCollections();
-  }, [profile]);
-
-  useEffect(() => {
-    filterCollections();
-  }, [searchQuery, statusFilter, collections]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
 
   const loadCollections = async () => {
-    if (!profile) return;
+    if (!profile?.id) {
+      console.log('No profile ID available');
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
+      console.log('Loading collections for inspector:', profile.id);
+
       const { data, error } = await supabase
         .from('collections')
-        .select(`
+        .select(
+          `
           *,
           institution:institutions (
             id,
             name,
-            code
+            ap_gazette_no
           )
-        `)
+        `
+        )
         .eq('inspector_id', profile.id)
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error loading collections:', error);
+        setCollections([]);
         return;
       }
 
+      console.log('Collections loaded:', data?.length || 0);
       setCollections((data as CollectionWithRelations[]) || []);
     } catch (error) {
       console.error('Error loading collections:', error);
+      setCollections([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const filterCollections = () => {
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadCollections();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const filteredCollections = useMemo(() => {
     let filtered = [...collections];
 
-    // Apply search filter
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       filtered = filtered.filter((collection) => {
         const institution = collection.institution;
         return (
-          institution?.name.toLowerCase().includes(query) ||
-          institution?.code?.toLowerCase().includes(query)
+          institution?.name?.toLowerCase().includes(q) ||
+          institution?.ap_gazette_no?.toLowerCase().includes(q)
         );
       });
     }
 
-    // Apply status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter((collection) => collection.status === statusFilter);
     }
 
-    setFilteredCollections(filtered);
-  };
+    return filtered;
+  }, [collections, searchQuery, statusFilter]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -97,264 +113,177 @@ export default function CollectionsListScreen() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'verified':
-        return '#1A9D5C';
+        return theme.colors.primary;
       case 'rejected':
-        return '#FF3B30';
+        return theme.colors.danger;
       case 'sent_to_accounts':
-        return '#FF9500';
+        return theme.colors.secondary;
       default:
-        return '#8E8E93';
+        return theme.colors.muted;
     }
   };
 
   const renderCollectionItem = ({ item }: { item: CollectionWithRelations }) => {
     const totalAmount = Number(item.arrear_amount || 0) + Number(item.current_amount || 0);
+    const statusColor = getStatusColor(item.status);
 
     return (
       <TouchableOpacity
-        style={styles.collectionCard}
         onPress={() => router.push(`/inspector/collections/${item.id}`)}
+        activeOpacity={0.85}
+        style={{ marginBottom: theme.spacing.sm }}
       >
-        <View style={styles.collectionCardLeft}>
-          <Text style={styles.institutionName}>
-            {item.institution?.name || `Institution #${item.institution_id}`}
-          </Text>
-          {item.institution?.code && (
-            <Text style={styles.institutionCode}>{item.institution.code}</Text>
-          )}
-          <View style={styles.collectionDetails}>
-            <Text style={styles.collectionDate}>{formatDate(item.collection_date)}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-              <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                {item.status.replace('_', ' ').toUpperCase()}
+        <Card style={styles.rowCard}>
+          <View style={styles.rowTop}>
+            <View style={{ flex: 1, paddingRight: theme.spacing.sm }}>
+              <Text style={styles.instName} numberOfLines={1}>
+                {item.institution?.name || `Institution #${item.institution_id}`}
+              </Text>
+              <Text style={styles.instMeta} numberOfLines={1}>
+                {item.institution?.ap_gazette_no ? `${item.institution.ap_gazette_no} • ` : ''}
+                {formatDate(item.collection_date)}
               </Text>
             </View>
+
+            <View style={styles.rightCol}>
+              <Text style={styles.amount} numberOfLines={1}>
+                ₹{totalAmount.toLocaleString('en-IN')}
+              </Text>
+              <View
+                style={[
+                  styles.statusPill,
+                  { backgroundColor: `${statusColor}15`, borderColor: `${statusColor}30` },
+                ]}
+              >
+                <Text style={[styles.statusText, { color: statusColor }]}>
+                  {item.status.replace('_', ' ').toUpperCase()}
+                </Text>
+              </View>
+            </View>
+
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
           </View>
-        </View>
-        <View style={styles.collectionCardRight}>
-          <Text style={styles.collectionAmount}>₹{totalAmount.toLocaleString('en-IN')}</Text>
-          <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
-        </View>
+        </Card>
       </TouchableOpacity>
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1A9D5C" />
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by institution name..."
-          placeholderTextColor="#8E8E93"
+    <Screen>
+      <View style={styles.page}>
+        <AppHeader
+          title="Collections"
+          subtitle="My submissions"
+          rightActions={[
+            {
+              icon: 'settings-outline',
+              onPress: () => router.push('/inspector/settings'),
+              accessibilityLabel: 'Settings',
+            },
+          ]}
+        />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <TextField
+          leftIcon="search-outline"
+          placeholder="Search by institution name/AP Gazette No..."
           value={searchQuery}
           onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
         />
-      </View>
 
-      {/* Status Filter */}
-      <View style={styles.filterContainer}>
-        {['all', 'pending', 'sent_to_accounts', 'verified', 'rejected'].map((status) => (
-          <TouchableOpacity
-            key={status}
-            style={[
-              styles.filterButton,
-              statusFilter === status && styles.filterButtonActive,
-            ]}
-            onPress={() => setStatusFilter(status)}
-          >
-            <Text
-              style={[
-                styles.filterButtonText,
-                statusFilter === status && styles.filterButtonTextActive,
-              ]}
-            >
-              {status.replace('_', ' ').toUpperCase()}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+        <View style={styles.chipsRow}>
+          <Chip label="All" selected={statusFilter === 'all'} onPress={() => setStatusFilter('all')} />
+          <Chip label="Pending" selected={statusFilter === 'pending'} onPress={() => setStatusFilter('pending')} />
+          <Chip label="Sent" selected={statusFilter === 'sent_to_accounts'} onPress={() => setStatusFilter('sent_to_accounts')} />
+          <Chip label="Verified" selected={statusFilter === 'verified'} onPress={() => setStatusFilter('verified')} />
+          <Chip label="Rejected" selected={statusFilter === 'rejected'} onPress={() => setStatusFilter('rejected')} />
+        </View>
 
-      {/* Collections List */}
-      {filteredCollections.length > 0 ? (
         <FlatList
           data={filteredCollections}
           renderItem={renderCollectionItem}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContainer}
+          keyExtractor={(item) => String(item.id)}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              // Keep pull-to-refresh strictly tied to user-initiated refresh state
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colors.primary}
+            />
+          }
+          ListEmptyComponent={
+            <EmptyState
+              title="No collections"
+              description="Create a collection from Search to see it here."
+              icon="receipt-outline"
+            />
+          }
         />
-      ) : (
-        <View style={styles.emptyState}>
-          <Ionicons name="receipt-outline" size={64} color="#8E8E93" />
-          <Text style={styles.emptyStateText}>No collections found</Text>
-        </View>
-      )}
-    </View>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  page: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  searchContainer: {
+  chipsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    margin: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontFamily: 'Nunito-Regular',
-    color: '#2A2A2A',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    gap: 8,
     flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.md,
   },
-  filterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#F7F9FC',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+  listContent: {
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
-  filterButtonActive: {
-    backgroundColor: '#1A9D5C',
-    borderColor: '#1A9D5C',
+  rowCard: {
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
   },
-  filterButtonText: {
-    fontSize: 12,
-    fontFamily: 'Nunito-SemiBold',
-    color: '#8E8E93',
-  },
-  filterButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  listContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  collectionCard: {
+  rowTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    gap: theme.spacing.sm,
   },
-  collectionCardLeft: {
-    flex: 1,
-  },
-  institutionName: {
-    fontSize: 16,
+  instName: {
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
+    fontSize: 16,
+    color: theme.colors.text,
     marginBottom: 4,
   },
-  institutionCode: {
-    fontSize: 12,
+  instMeta: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 8,
+    fontSize: 13,
+    color: theme.colors.muted,
   },
-  collectionDetails: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  rightCol: {
+    alignItems: 'flex-end',
+    gap: 6,
   },
-  collectionDate: {
-    fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+  amount: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 14,
+    color: theme.colors.text,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
   },
   statusText: {
-    fontSize: 10,
     fontFamily: 'Nunito-SemiBold',
-  },
-  collectionCardRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  collectionAmount: {
-    fontSize: 18,
-    fontFamily: 'Nunito-Bold',
-    color: '#1A9D5C',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginTop: 16,
+    fontSize: 11,
+    letterSpacing: 0.2,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

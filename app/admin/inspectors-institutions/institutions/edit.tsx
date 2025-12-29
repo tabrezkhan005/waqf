@@ -19,11 +19,10 @@ export default function EditInstitutionScreen() {
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    code: '',
+    ap_gazette_no: '',
     district_id: '',
-    address: '',
-    contact_name: '',
-    contact_phone: '',
+    mandal: '',
+    village: '',
   });
   const [districts, setDistricts] = useState<any[]>([]);
 
@@ -44,11 +43,10 @@ export default function EditInstitutionScreen() {
 
       setFormData({
         name: institution.name || '',
-        code: institution.code || '',
+        ap_gazette_no: institution.ap_gazette_no || '',
         district_id: String(institution.district_id || ''),
-        address: institution.address || '',
-        contact_name: institution.contact_name || '',
-        contact_phone: institution.contact_phone || '',
+        mandal: institution.mandal || '',
+        village: institution.village || '',
       });
 
       const { data: districtsData } = await supabase
@@ -66,8 +64,8 @@ export default function EditInstitutionScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.district_id) {
-      Alert.alert('Error', 'Please fill all required fields');
+    if (!formData.name || !formData.ap_gazette_no || !formData.district_id) {
+      Alert.alert('Error', 'Please fill all required fields (Name, AP Gazette No, District)');
       return;
     }
 
@@ -77,11 +75,10 @@ export default function EditInstitutionScreen() {
         .from('institutions')
         .update({
           name: formData.name,
-          code: formData.code || null,
-          district_id: parseInt(formData.district_id),
-          address: formData.address || null,
-          contact_name: formData.contact_name || null,
-          contact_phone: formData.contact_phone || null,
+          ap_gazette_no: formData.ap_gazette_no,
+          district_id: formData.district_id,
+          mandal: formData.mandal || null,
+          village: formData.village || null,
         })
         .eq('id', id);
 
@@ -122,12 +119,14 @@ export default function EditInstitutionScreen() {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Code</Text>
+          <Text style={styles.label}>
+            AP Gazette No <Text style={styles.required}>*</Text>
+          </Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter institution code"
-            value={formData.code}
-            onChangeText={(text) => setFormData({ ...formData, code: text })}
+            placeholder="Enter AP Gazette Number"
+            value={formData.ap_gazette_no}
+            onChangeText={(text) => setFormData({ ...formData, ap_gazette_no: text })}
           />
         </View>
 
@@ -159,35 +158,22 @@ export default function EditInstitutionScreen() {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Address</Text>
+          <Text style={styles.label}>Mandal</Text>
           <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Enter address"
-            value={formData.address}
-            onChangeText={(text) => setFormData({ ...formData, address: text })}
-            multiline
-            numberOfLines={3}
+            style={styles.input}
+            placeholder="Enter mandal"
+            value={formData.mandal}
+            onChangeText={(text) => setFormData({ ...formData, mandal: text })}
           />
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Contact Name</Text>
+          <Text style={styles.label}>Village</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter contact name"
-            value={formData.contact_name}
-            onChangeText={(text) => setFormData({ ...formData, contact_name: text })}
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Contact Phone</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter contact phone"
-            value={formData.contact_phone}
-            onChangeText={(text) => setFormData({ ...formData, contact_phone: text })}
-            keyboardType="phone-pad"
+            placeholder="Enter village"
+            value={formData.village}
+            onChangeText={(text) => setFormData({ ...formData, village: text })}
           />
         </View>
 
@@ -287,28 +273,3 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito-Bold',
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

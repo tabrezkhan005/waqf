@@ -1,21 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  TouchableOpacity,
-  TextInput,
-} from 'react-native';
+import React, { useMemo, useEffect, useState } from 'react';
+import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase/client';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { Chip } from '@/components/ui/Chip';
+import { TextField } from '@/components/ui/TextField';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { theme } from '@/lib/theme';
 
 interface InstitutionRanking {
-  institution_id: string; // UUID
+  institution_id: string;
   institution_name: string;
   institution_code: string | null;
+  district_id: string | null;
   district_name: string;
   total_collected: number;
   pending_count: number;
@@ -25,338 +25,250 @@ interface InstitutionRanking {
 export default function InstitutionRankingScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [institutions, setInstitutions] = useState<InstitutionRanking[]>([]);
-  const [filteredInstitutions, setFilteredInstitutions] = useState<InstitutionRanking[]>([]);
   const [districtFilter, setDistrictFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [districts, setDistricts] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    filterInstitutions();
-  }, [districtFilter, searchQuery, institutions]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadInstitutionRankings(), loadDistricts()]);
-    } catch (error) {
-      console.error('Error loading data:', error);
+
+      // Load districts, institutions, and DCB data in parallel
+      const [{ data: districtRows }, { data: institutionRows }, dcbData] = await Promise.all([
+        supabase.from('districts').select('id, name').order('name'),
+        supabase
+          .from('institutions')
+          .select(`
+            id,
+            name,
+            ap_gazette_no,
+            district_id,
+            district:districts (
+              id,
+              name
+            )
+          `)
+          .eq('is_active', true),
+        import('@/lib/dcb/district-tables').then(m => m.queryAllDistrictDCB(
+          'ap_gazette_no, institution_name, collection_total, _district_name'
+        ))
+      ]);
+
+      setDistricts((districtRows || []).map((d: any) => ({ id: String(d.id), name: d.name })));
+
+      // Create institution map by ap_gazette_no
+      const institutionMap = new Map<string, any>();
+      (institutionRows || []).forEach((inst: any) => {
+        if (inst.ap_gazette_no) {
+          institutionMap.set(inst.ap_gazette_no, inst);
+        }
+      });
+
+      const byInstitution = new Map<string, InstitutionRanking>();
+
+      // Aggregate DCB data by institution
+      dcbData.forEach((row: any) => {
+        if (!row.ap_gazette_no) return;
+
+        const institution = institutionMap.get(row.ap_gazette_no);
+        if (!institution) return;
+
+        const key = String(institution.id);
+        const instName = institution.name || row.institution_name || 'Unknown';
+        const districtId = institution.district_id ? String(institution.district_id) : null;
+        const districtName = institution.district?.name || row._district_name || 'Unknown';
+
+        const existing =
+          byInstitution.get(key) ||
+          ({
+            institution_id: key,
+            institution_name: instName,
+            institution_code: institution.ap_gazette_no,
+            district_id: districtId,
+            district_name: districtName,
+            total_collected: 0,
+            pending_count: 0,
+            collection_count: 0,
+          } as InstitutionRanking);
+
+        existing.total_collected += Number(row.collection_total || 0);
+        existing.collection_count += 1;
+        existing.pending_count += 1;
+
+        byInstitution.set(key, existing);
+      });
+
+      const rankings = Array.from(byInstitution.values()).sort((a, b) => b.total_collected - a.total_collected);
+      setInstitutions(rankings);
+    } catch (e) {
+      console.error('Error loading institution rankings:', e);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadInstitutionRankings = async () => {
-    try {
-      const { data: institutionsData } = await supabase
-        .from('institutions')
-        .select(`
-          id,
-          name,
-          code,
-          district:districts (
-            id,
-            name
-          )
-        `)
-        .eq('is_active', true)
-        .order('name');
-
-      if (!institutionsData) return;
-
-      const rankings: InstitutionRanking[] = [];
-
-      for (const institution of institutionsData) {
-        const { data: collections } = await supabase
-          .from('collections')
-          .select('*')
-          .eq('institution_id', institution.id);
-
-        const totalCollected = collections?.reduce(
-          (sum, c) => sum + Number(c.arrear_amount || 0) + Number(c.current_amount || 0),
-          0
-        ) || 0;
-
-        const pending = collections?.filter((c) =>
-          ['pending', 'sent_to_accounts'].includes(c.status)
-        ).length || 0;
-
-        rankings.push({
-          institution_id: institution.id,
-          institution_name: institution.name,
-          institution_code: institution.code,
-          district_name: institution.district?.name || 'Unknown',
-          total_collected: totalCollected,
-          pending_count: pending,
-          collection_count: collections?.length || 0,
-        });
-      }
-
-      // Sort by total collected
-      rankings.sort((a, b) => b.total_collected - a.total_collected);
-
-      setInstitutions(rankings);
-    } catch (error) {
-      console.error('Error loading institution rankings:', error);
-    }
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
   };
 
-  const loadDistricts = async () => {
-    try {
-      const { data } = await supabase
-        .from('districts')
-        .select('id, name')
-        .order('name');
-
-      setDistricts(data || []);
-    } catch (error) {
-      console.error('Error loading districts:', error);
-    }
-  };
-
-  const filterInstitutions = () => {
+  const filteredInstitutions = useMemo(() => {
     let filtered = [...institutions];
-
-    // District filter
     if (districtFilter !== 'all') {
-      filtered = filtered.filter((inst) => {
-        const district = districts.find((d) => d.id.toString() === districtFilter);
-        return district && inst.district_name === district.name;
-      });
+      filtered = filtered.filter((i) => i.district_id === districtFilter);
     }
-
-    // Search filter
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (inst) =>
-          inst.institution_name.toLowerCase().includes(query) ||
-          inst.institution_code?.toLowerCase().includes(query)
-      );
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((i) => i.institution_name.toLowerCase().includes(q) || i.institution_code?.toLowerCase().includes(q));
     }
-
-    setFilteredInstitutions(filtered);
-  };
+    return filtered;
+  }, [institutions, districtFilter, searchQuery]);
 
   const formatCurrency = (amount: number) => {
-    if (amount >= 100000) {
-      return `₹${(amount / 100000).toFixed(2)}L`;
-    }
+    if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)}L`;
     return `₹${amount.toLocaleString('en-IN')}`;
   };
 
-  if (loading) {
+  const renderItem = ({ item, index }: { item: InstitutionRanking; index: number }) => {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#9C27B0" />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      {/* Filters */}
-      <View style={styles.filtersContainer}>
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name or code..."
-            placeholderTextColor="#8E8E93"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.districtFilter}>
-          <TouchableOpacity
-            style={[styles.filterChip, districtFilter === 'all' && styles.filterChipActive]}
-            onPress={() => setDistrictFilter('all')}
-          >
-            <Text style={[styles.filterChipText, districtFilter === 'all' && styles.filterChipTextActive]}>
-              All Districts
-            </Text>
-          </TouchableOpacity>
-          {districts.map((district) => (
-            <TouchableOpacity
-              key={district.id}
-              style={[styles.filterChip, districtFilter === district.id.toString() && styles.filterChipActive]}
-              onPress={() => setDistrictFilter(district.id.toString())}
-            >
-              <Text style={[styles.filterChipText, districtFilter === district.id.toString() && styles.filterChipTextActive]}>
-                {district.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Rankings List */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        {filteredInstitutions.map((institution, index) => (
-          <TouchableOpacity
-            key={institution.institution_id}
-            style={styles.rankingCard}
-            onPress={() => router.push(`/reports/explore/institution?institutionId=${institution.institution_id}`)}
-          >
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => router.push(`/reports/explore/institution?institutionId=${item.institution_id}`)}
+        style={{ marginBottom: theme.spacing.sm }}
+      >
+        <Card style={styles.rowCard}>
+          <View style={styles.rowLeft}>
             <View style={styles.rankBadge}>
               <Text style={styles.rankText}>#{index + 1}</Text>
             </View>
-            <View style={styles.rankingContent}>
-              <Text style={styles.institutionName}>{institution.institution_name}</Text>
-              {institution.institution_code && (
-                <Text style={styles.institutionCode}>Code: {institution.institution_code}</Text>
-              )}
-              <Text style={styles.districtName}>{institution.district_name}</Text>
-              <View style={styles.statsRow}>
-                <Text style={styles.statText}>
-                  Total: {formatCurrency(institution.total_collected)}
-                </Text>
-                <Text style={styles.statDivider}>•</Text>
-                <Text style={styles.statText}>
-                  Collections: {institution.collection_count}
-                </Text>
-                <Text style={styles.statDivider}>•</Text>
-                <Text style={styles.statText}>
-                  Pending: {institution.pending_count}
-                </Text>
-              </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle} numberOfLines={1}>{item.institution_name}</Text>
+              <Text style={styles.rowSubtitle} numberOfLines={2}>
+                {item.district_name}{item.institution_code ? ` • ${item.institution_code}` : ''}
+                {'\n'}
+                Total: {formatCurrency(item.total_collected)} • Entries: {item.collection_count}
+              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+        </Card>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <Screen>
+      <View style={styles.page}>
+        <AppHeader title="Compare" subtitle="Institutions" />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <TextField
+          leftIcon="search-outline"
+          placeholder="Search by name or code..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+
+        <View style={{ height: theme.spacing.md }} />
+
+        <FlatList
+          data={[{ id: 'all', name: 'All Districts' }, ...districts]}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(d) => d.id}
+          contentContainerStyle={styles.districtChips}
+          renderItem={({ item: d }) => (
+            <Chip
+              label={d.name}
+              selected={districtFilter === d.id}
+              onPress={() => setDistrictFilter(d.id)}
+              style={{ marginRight: theme.spacing.sm }}
+            />
+          )}
+        />
+
+        <FlatList
+          data={filteredInstitutions}
+          renderItem={({ item, index }) => renderItem({ item, index })}
+          keyExtractor={(i) => i.institution_id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing || loading} onRefresh={onRefresh} tintColor={theme.colors.secondary} />
+          }
+          ListEmptyComponent={
+            <EmptyState
+              title="No institutions"
+              description={searchQuery ? 'Try a different keyword.' : 'No DCB entries found.'}
+              icon="business-outline"
+            />
+          }
+        />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  page: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
   },
-  filtersContainer: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+  districtChips: {
+    paddingVertical: theme.spacing.sm,
   },
-  searchContainer: {
+  listContent: {
+    paddingTop: theme.spacing.md,
+    paddingBottom: 100,
+  },
+  rowCard: {
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    justifyContent: 'space-between',
   },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontFamily: 'Nunito-Regular',
-    color: '#2A2A2A',
-  },
-  districtFilter: {
+  rowLeft: {
     flexDirection: 'row',
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F7F9FC',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginRight: 8,
-  },
-  filterChipActive: {
-    backgroundColor: '#9C27B0',
-    borderColor: '#9C27B0',
-  },
-  filterChipText: {
-    fontSize: 12,
-    fontFamily: 'Nunito-SemiBold',
-    color: '#8E8E93',
-  },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-  },
-  scrollView: {
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
     flex: 1,
-  },
-  content: {
-    padding: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  rankingCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    paddingRight: theme.spacing.sm,
   },
   rankBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#9C27B0',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
   },
   rankText: {
-    fontSize: 18,
     fontFamily: 'Nunito-Bold',
-    color: '#FFFFFF',
+    fontSize: 14,
+    color: theme.colors.surface,
   },
-  rankingContent: {
-    flex: 1,
-  },
-  institutionName: {
-    fontSize: 18,
+  rowTitle: {
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
+    fontSize: 15,
+    color: theme.colors.text,
     marginBottom: 4,
   },
-  institutionCode: {
-    fontSize: 12,
+  rowSubtitle: {
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 4,
-  },
-  districtName: {
     fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 8,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    flexWrap: 'wrap',
-  },
-  statText: {
-    fontSize: 12,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-  },
-  statDivider: {
-    fontSize: 12,
-    color: '#8E8E93',
+    color: theme.colors.muted,
   },
 });

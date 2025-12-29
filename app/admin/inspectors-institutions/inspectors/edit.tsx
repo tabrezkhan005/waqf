@@ -69,7 +69,7 @@ export default function EditInspectorScreen() {
         .from('profiles')
         .update({
           full_name: formData.full_name,
-          district_id: parseInt(formData.district_id),
+          district_id: formData.district_id,
         })
         .eq('id', id);
 
@@ -228,19 +228,3 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito-Bold',
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

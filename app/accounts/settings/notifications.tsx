@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Switch,
-} from 'react-native';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { theme } from '@/lib/theme';
 
 export default function NotificationsSettingsScreen() {
   const [newPendingApprovals, setNewPendingApprovals] = useState(true);
@@ -14,171 +12,133 @@ export default function NotificationsSettingsScreen() {
   const [dailySummary, setDailySummary] = useState(false);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.sectionTitle}>Notification Preferences</Text>
-      <Text style={styles.sectionDescription}>
-        Manage your notification settings for the Accounts role
-      </Text>
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Notifications" subtitle="Preferences" />
 
-      <View style={styles.settingsList}>
-        <View style={styles.settingItem}>
+        <View style={{ height: theme.spacing.md }} />
+
+        <Card style={styles.settingItem}>
           <View style={styles.settingItemLeft}>
-            <Ionicons name="time-outline" size={24} color="#FF9500" />
+            <View style={[styles.iconPill, { backgroundColor: `${theme.colors.primary}15`, borderColor: `${theme.colors.primary}30` }]}>
+              <Ionicons name="time-outline" size={18} color={theme.colors.primary} />
+            </View>
             <View style={styles.settingItemText}>
-              <Text style={styles.settingTitle}>New Pending Approvals</Text>
-              <Text style={styles.settingDescription}>
-                Get notified when inspectors submit new collections
-              </Text>
+              <Text style={styles.settingTitle}>New pending approvals</Text>
+              <Text style={styles.settingDescription}>When inspectors submit new collections</Text>
             </View>
           </View>
           <Switch
             value={newPendingApprovals}
             onValueChange={setNewPendingApprovals}
-            trackColor={{ false: '#E5E5EA', true: '#FF9500' }}
-            thumbColor="#FFFFFF"
+            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+            thumbColor={theme.colors.surface}
           />
-        </View>
+        </Card>
 
-        <View style={styles.settingItem}>
+        <Card style={styles.settingItem}>
           <View style={styles.settingItemLeft}>
-            <Ionicons name="close-circle-outline" size={24} color="#FF3B30" />
+            <View style={[styles.iconPill, { backgroundColor: `${theme.colors.danger}15`, borderColor: `${theme.colors.danger}30` }]}>
+              <Ionicons name="close-circle-outline" size={18} color={theme.colors.danger} />
+            </View>
             <View style={styles.settingItemText}>
-              <Text style={styles.settingTitle}>Rejected Collections Alerts</Text>
-              <Text style={styles.settingDescription}>
-                Get notified about rejected collections
-              </Text>
+              <Text style={styles.settingTitle}>Rejected collections</Text>
+              <Text style={styles.settingDescription}>Alerts when a collection is rejected</Text>
             </View>
           </View>
           <Switch
             value={rejectedCollections}
             onValueChange={setRejectedCollections}
-            trackColor={{ false: '#E5E5EA', true: '#FF9500' }}
-            thumbColor="#FFFFFF"
+            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+            thumbColor={theme.colors.surface}
           />
-        </View>
+        </Card>
 
-        <View style={styles.settingItem}>
+        <Card style={styles.settingItem}>
           <View style={styles.settingItemLeft}>
-            <Ionicons name="calendar-outline" size={24} color="#003D99" />
+            <View style={[styles.iconPill, { backgroundColor: `${theme.colors.info}15`, borderColor: `${theme.colors.info}30` }]}>
+              <Ionicons name="calendar-outline" size={18} color={theme.colors.info} />
+            </View>
             <View style={styles.settingItemText}>
-              <Text style={styles.settingTitle}>Daily Summary</Text>
-              <Text style={styles.settingDescription}>
-                Receive daily summary of verified and pending collections
-              </Text>
+              <Text style={styles.settingTitle}>Daily summary</Text>
+              <Text style={styles.settingDescription}>Daily rollup of verified and pending collections</Text>
             </View>
           </View>
           <Switch
             value={dailySummary}
             onValueChange={setDailySummary}
-            trackColor={{ false: '#E5E5EA', true: '#FF9500' }}
-            thumbColor="#FFFFFF"
+            trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+            thumbColor={theme.colors.surface}
           />
-        </View>
-      </View>
+        </Card>
 
-      <View style={styles.noteContainer}>
-        <Ionicons name="information-circle-outline" size={20} color="#8E8E93" />
-        <Text style={styles.noteText}>
-          Notification preferences are stored locally. Push notifications will be implemented in a future update.
-        </Text>
+        <View style={{ height: theme.spacing.md }} />
+
+        <Card style={styles.noteContainer}>
+          <Ionicons name="information-circle-outline" size={18} color={theme.colors.muted} />
+          <Text style={styles.noteText}>
+            Preferences are stored locally. Push notifications can be wired later.
+          </Text>
+        </Card>
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  content: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  sectionDescription: {
-    fontSize: 14,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 24,
-  },
-  settingsList: {
-    gap: 16,
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 100,
   },
   settingItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
   },
   settingItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 16,
+    marginRight: theme.spacing.md,
   },
   settingItemText: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: theme.spacing.md,
   },
   settingTitle: {
-    fontSize: 16,
-    fontFamily: 'Nunito-SemiBold',
-    color: '#2A2A2A',
-    marginBottom: 4,
+    fontSize: 14,
+    fontFamily: 'Nunito-Bold',
+    color: theme.colors.text,
+    marginBottom: 2,
   },
   settingDescription: {
     fontSize: 12,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
+  },
+  iconPill: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
   },
   noteContainer: {
     flexDirection: 'row',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
   },
   noteText: {
     flex: 1,
     fontSize: 12,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginLeft: 12,
+    color: theme.colors.muted,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

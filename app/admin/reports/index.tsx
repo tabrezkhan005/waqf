@@ -1,7 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Screen } from '@/components/ui/Screen';
+import { AppHeader } from '@/components/ui/AppHeader';
+import { Card } from '@/components/ui/Card';
+import { theme } from '@/lib/theme';
 
 export default function ReportsIndexScreen() {
   const router = useRouter();
@@ -50,109 +54,75 @@ export default function ReportsIndexScreen() {
   ];
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Reports & Analytics</Text>
-        <Text style={styles.subtitle}>
-          Comprehensive insights and performance metrics
-        </Text>
+    <Screen scroll>
+      <View style={styles.page}>
+        <AppHeader title="Reports" subtitle="Admin analytics" />
+
+        <View style={{ height: theme.spacing.md }} />
 
         {reportOptions.map((option) => (
           <TouchableOpacity
             key={option.id}
-            style={styles.reportCard}
+            activeOpacity={0.85}
             onPress={() => router.push(option.route as any)}
+            style={{ marginBottom: theme.spacing.sm }}
           >
-            <View style={[styles.iconContainer, { backgroundColor: `${option.color}15` }]}>
-              <Ionicons name={option.icon as any} size={32} color={option.color} />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>{option.title}</Text>
-              <Text style={styles.cardDescription}>{option.description}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#8E8E93" />
+            <Card style={styles.rowCard}>
+              <View style={styles.rowLeft}>
+                <View style={[styles.iconContainer, { backgroundColor: `${option.color}15`, borderColor: `${option.color}30` }]}>
+                  <Ionicons name={option.icon as any} size={20} color={option.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{option.title}</Text>
+                  <Text style={styles.cardDescription}>{option.description}</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.muted} />
+            </Card>
           </TouchableOpacity>
         ))}
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
+  page: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 120,
   },
-  content: {
-    padding: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
-    marginBottom: 24,
-  },
-  reportCard: {
+  rowCard: {
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F7F9FC',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    justifyContent: 'space-between',
+  },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    flex: 1,
+    paddingRight: theme.spacing.sm,
   },
   iconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
-  },
-  cardContent: {
-    flex: 1,
+    borderWidth: 1,
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontFamily: 'Nunito-Bold',
-    color: '#2A2A2A',
-    marginBottom: 4,
+    color: theme.colors.text,
+    marginBottom: 2,
   },
   cardDescription: {
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'Nunito-Regular',
-    color: '#8E8E93',
+    color: theme.colors.muted,
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

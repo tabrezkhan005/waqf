@@ -34,6 +34,19 @@ export default function InspectorsInstitutionsIndex() {
             Manage institutions and assignments
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => router.push('/admin/inspectors-institutions/districts')}
+        >
+          <View style={[styles.iconContainer, { backgroundColor: '#FF950015' }]}>
+            <Ionicons name="location" size={32} color="#FF9500" />
+          </View>
+          <Text style={styles.cardTitle}>Districts</Text>
+          <Text style={styles.cardDescription}>
+            Manage districts and add new ones
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -47,6 +60,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 16,
+    paddingBottom: 100,
     justifyContent: 'center',
   },
   card: {
@@ -80,28 +94,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

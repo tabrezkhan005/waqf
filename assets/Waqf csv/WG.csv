@@ -1,0 +1,66 @@
+ap_gazette_no,institution_name,village,mandal,extent_dry,extent_wet,extent_total,demand_arrears,demand_current,demand_total,receiptno_date,challanno_date,collection_arrears,collection_current,collection_total,balance_arrears,balance_current,balance_total,remarks
+WGGZT0432,Badi Mosque,Tanuku,Tanuku,,,,360000,90000,450000,"2630/53/14-08-2025, 2637/53/12-09-2025, 8908/179/26-11-2025","511/18-08-2025, 622/12-09-2025, 835/28-11-2025",300000,,300000,60000,90000,150000,
+WGGZT0433,Choti Mosque Islampet,Tanuku,Tanuku,-,-,-,310000,90000,400000,,,,,0,310000,90000,400000,
+WGGZT0303,Choti Mosque,Bhimavaram,Bhimavaram,-,-,Shops,198000,22000,220000,8905/179/30-10-2025,759/31-10-2025,50000,,50000,148000,22000,170000,
+WGGZT0411,Mosque,Gavapuram,Gavapuram,-,-,-,218000,42000,260000,"2612/53/30-05-2025, 2618/53/25-06-2025, 2621/53/17-07-2025, 2638/53/22-07-2025","228/02-05-2025, 320/25-06-2025, 374/18-07-2025, 647/23-09-2025",70000,,70000,148000,42000,190000,
+WGGZT0304,Big Mosque,Bhimavaram,Bhimavaram,-,-,-,122000,22000,144000,,,,,0,122000,22000,144000,
+WGGZT0292 to 302,"Badi Mosque, Choti Mosque, Chowltry & Idgah ",Akiveedu,Akiveedu,Dry,,0.4,200000,25000,225000,8902/179/15-10-2025,728/16-10-2025,200000,,200000,0,25000,25000,"In DM ,Subject to Audit"
+WGGZT0401,Mosque,Mulaparu,Mulaparu,Dry,,2.25,18900,6300,25200,8914/179/02-12-2025,861/09-12-2025,18900,,18900,0,6300,6300,
+WGGZT0397,"Panja
+Mosque",Palakollu,Palakollu,Dry,-,14.95,10000,10000,20000,,,,,0,10000,10000,20000,
+WGGZT0419,Panja,Penugonda,Penugonda,,,1.57,10000,2500,12500,,,,,0,10000,2500,12500,
+WGGZT0420,Mosque,Attili,Attili,,,0.5,9000,9000,18000,,,,,0,9000,9000,18000,Direct to Board
+WGGZT0414,Mosque,Panthapadu,Panthapadu,-,-,-,7500,7500,15000,,,,,0,7500,7500,15000,
+WGGZT0423,Mosque,Penugonda,Penugonda,,,,4700,1000,5700,,,,,0,4700,1000,5700,
+WGGZT0410,Hanfia Mosque,Tadepalligudem,Tadepalligudem,,,Shops,3000,1000,4000,8913/179/02-12-2025,864/09-12-2025,3000,1000,4000,0,0,0,Direct to Board
+WGGZT0402,Peerla Panja,Mulaparu,Mulaparu,Dry,,2.43,850,850,1700,,,,,0,850,850,1700,
+WGGZT0298,"Mosque,",Akiveedu,Akiveedu,,,0,0,0,0,,,,,0,0,0,0,
+WGGZT0299,Mosque,Akiveedu,Akiveedu,Dry,,1.38,0,0,0,,,,,0,0,0,0,
+WGGZT0305,Idgah,Narsapur,Narsapur,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0306,Mosque,Srungavruksham,Srungavruksham,,Wet,5.26,0,0,0,,,,,0,0,0,0,
+WGGZT0307,Panja,Srungavruksham,Srungavruksham,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0308,Mosque,Veeravasaram,Veeravasaram,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0309,Dargah,Veeravasaram,Veeravasaram,Dry,,2.68,0,0,0,,,,,0,0,0,0,Subject To Audit
+WGGZT0310,Panja,Srungavruksham,Srungavruksham,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0383,"Mosque
+Purnoor",Narsapur,Narsapur,,,1.42,0,3000,3000,2606/53/30-04-2025,122/06-05-2025,,3000,3000,0,0,0,
+WGGZT0384,"Tailorpet
+Mosque",Narsapur,Narsapur,,,3.51,0,3000,3000,2628/53/02-08-2025,439/04/08/2025,,3000,3000,0,0,0,
+WGGZT0385,"Jamia Azhar
+Mosque",Narsapur,Narsapur,,,13.79,0,8000,8000,2604/53/30-04-2025,122/06-05-2025,,8000,8000,0,0,0,
+WGGZT0386,Panja,Narsapur,Narsapur,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0387,Panja,Narsapur,Narsapur,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0388,Eidgah,Narsapur,Narsapur,-,-,-,0,16000,16000,2605/53/30-04-2025,122/06-05-2025,,16000,16000,0,0,0,
+WGGZT0389,Panja,Narsapur,Narsapur,-,-,-,0,8000,8000,2641/53/29-09-2025,668/29-09-2025,,8000,8000,0,0,0,
+WGGZT0390,"D.Hzt.Ibrahim Mastan
+Vali",Narsapur,Narsapur,-,Wet,6,0,10000,10000,,,,,0,0,10000,10000,
+WGGZT0391,"D.Hzt. Syed Shah Abdul
+Raheem",Narsapur,Narsapur,,,5.2,0,7000,7000,,,,,0,0,7000,7000,
+WGGZT0392,Mosque,Narsapur,Narsapur,-,-,2,0,0,0,,,,,0,0,0,0,
+WGGZT0393,Panja,Narsapur,Narsapur,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0394,"Peerla Panja &
+Mosque",Konteru,Konteru,,Wet,16.26,0,16000,16000,2616/53/16-06-2025,287/17-06-2025,,16000,16000,0,0,0,
+WGGZT0395,Mosque,Mogaltur,Mogaltur,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0396,Peerla Panja,Rustumbada,Rustumbada,-,-,9.93,0,0,0,,,,,0,0,0,0,
+WGGZT0398,Mosque,Vamavaram,Vamavaram,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0399,Peerla Panja,Achanta (Vamavaram),Achanta (Vamavaram),-,-,23,0,0,0,,,,,0,0,0,0,
+WGGZT0400,Peerla Panja,Mogaltur,Mogaltur,Dry,-,4.83,0,0,0,,,,,0,0,0,0,
+WGGZT0403,Dargah,Narsapur,Narsapur,-,-,-,0,0,0,,,,,0,0,0,0,Encroachment
+WGGZT0412,Ashoor Khana,Pothavaram,Pothavaram,-,-,-,0,0,0,,,,,0,0,0,0,IN Court
+WGGZT0413,Mosque,Kaspa pentapadu,Kaspa pentapadu,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0415,Astana,moha,moha,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0416,Panja,Ravipadu,Ravipadu,-,-,21.22,0,0,0,,,,,0,0,0,0,
+WGGZT0417,Mosque,Nadipallikota,Nadipallikota,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0418,Peerla Panja,Attili,Attili,-,-,23.02,0,0,0,,,,,0,0,0,0,
+WGGZT0421,Eidgah,Attili,Attili,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0422,Panja,Manchili,Manchili,-,-,-,0,0,0,,,,,0,0,0,0,
+WGGZT0424,Mosque,Kavalipuram,Kavalipuram,-,-,-,0,0,0,,,,,0,0,0,0,IN Court
+WGGZT0425,Mosque,Relangi,Relangi,-,-,-,0,0,0,,,,,0,0,0,0,IN Court pending
+WGGZT0426,Peerla Panja,Kavalipuram,Kavalipuram,-,-,11.53,0,0,0,,,,,0,0,0,0,
+WGGZT0427,D.Hzt.Syed Buran,Penugonda,Penugonda,-,-,11.34,0,0,0,,,,,0,0,0,0,IN Court pending
+WGGZT0428,Panja,Penugonda,Penugonda,-,-,-,0,0,0,,,,,0,0,0,0,IN Court pending
+WGGZT0429,Mosque,Penugonda,Penugonda,-,-,39.59,0,0,0,,,,,0,0,0,0,IN Court pending
+WGGZT0430,Peerla Panja,Rolangi,Rolangi,-,-,37.36,0,0,0,,,,,0,0,0,0,
+WGGZT0431,Imam Hussain Panja,Iragavaram,Iragavaram,,,33.67,0,0,0,,,,,0,0,0,0,
+WGGZT0434,Mosque,Duvva,Duvva,-,-,21.22,0,0,0,,,,,0,0,0,0,Court case pending
+WGWBU0001,Muslim Cholwtry Anjuman-e-Mahifuzul Islam,Narsapur,Narsapur,,,,0,9000,9000,2607/53/30-04-2025,122/06-05-2025,,9000,9000,0,0,0,

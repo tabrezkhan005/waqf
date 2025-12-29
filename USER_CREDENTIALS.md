@@ -135,7 +135,3 @@ Each inspector is assigned to one district. Password format: `Inspector@[DISTRIC
 - ✅ All inspectors assigned to their districts
 
 **Total**: 32 users ready for login
-
-
-
-

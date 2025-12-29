@@ -23,7 +23,8 @@ export default function InspectorsInstitutionsStack() {
       <Stack.Screen
         name="inspectors"
         options={{
-          title: 'Inspectors',
+          // Screen has its own custom header; avoid duplicate header text
+          headerShown: false,
         }}
       />
       <Stack.Screen
@@ -66,6 +67,12 @@ export default function InspectorsInstitutionsStack() {
         name="institutions/edit"
         options={{
           title: 'Edit Institution',
+        }}
+      />
+      <Stack.Screen
+        name="districts"
+        options={{
+          title: 'Districts',
         }}
       />
     </Stack>
