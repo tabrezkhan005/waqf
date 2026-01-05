@@ -47,13 +47,13 @@ export default function AddInspectorScreen() {
         .order('name');
 
       if (error) {
-        console.error('Error loading districts:', error);
+        // Removed debug log districts:', error);
         Alert.alert('Error', 'Failed to load districts. Please try again.');
         return;
       }
       setDistricts(data || []);
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
       Alert.alert('Error', 'Failed to load districts. Please try again.');
     } finally {
       setLoadingDistricts(false);

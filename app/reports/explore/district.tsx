@@ -41,16 +41,18 @@ export default function DistrictDetailScreen() {
         .single();
 
       if (!districtData) {
-        console.error('District not found');
+        // Removed debug log');
         return;
       }
 
       setDistrict(districtData);
 
-      // Load DCB data from district-specific table
+      // Load DCB data from district-specific table (only verified collections)
+      // OPTIMIZATION: Limit rows to prevent fetching all data
       const dcbData = await queryDistrictDCB(
         districtData.name,
-        'ap_gazette_no, institution_name, mandal, village, extent_dry, extent_wet, extent_total, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, remarks, created_at, updated_at'
+        'ap_gazette_no, institution_name, mandal, village, extent_dry, extent_wet, extent_total, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, remarks, created_at, updated_at, financial_year',
+        { verifiedOnly: true, maxRows: 2000 } // Only count verified collections, limit rows
       );
 
       const rows: any[] = dcbData || [];
@@ -149,7 +151,7 @@ export default function DistrictDetailScreen() {
         top_inspectors: topInspectors,
       });
     } catch (error) {
-      console.error('Error loading district data:', error);
+      // Removed debug log district data:', error);
     } finally {
       setLoading(false);
     }

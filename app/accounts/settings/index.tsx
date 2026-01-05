@@ -29,7 +29,7 @@ export default function AccountsProfileScreen() {
           onPress: async () => {
             setLoading(true);
             await signOut();
-            router.replace('/auth');
+            router.replace('/get-started');
           },
         },
       ]

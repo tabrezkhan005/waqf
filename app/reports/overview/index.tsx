@@ -61,7 +61,7 @@ export default function ReportsOverviewScreen() {
 
       setDistricts(data || []);
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
     }
   };
 
@@ -75,7 +75,7 @@ export default function ReportsOverviewScreen() {
         loadTopDistricts(),
       ]);
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      // Removed debug log dashboard data:', error);
     } finally {
       setLoading(false);
     }
@@ -87,9 +87,11 @@ export default function ReportsOverviewScreen() {
       const toDate = dateRange.to ? dateRange.to.toISOString() : null;
       const districtId = districtFilter || null;
 
-      // Load DCB data from all district tables
+      // Load DCB data from all district tables (only verified collections)
+      // OPTIMIZATION: Limit rows per table to prevent fetching all data
       let dcbData = await queryAllDistrictDCB(
-        'collection_arrears, collection_current, collection_total, created_at, _district_name'
+        'collection_arrears, collection_current, collection_total, created_at, _district_name, financial_year',
+        { verifiedOnly: true, maxRowsPerTable: 500 } // Only count verified collections, limit rows per table
       );
 
       // Apply date filter
@@ -151,7 +153,7 @@ export default function ReportsOverviewScreen() {
         rejected_count: rejectedCount,
       });
     } catch (error) {
-      console.error('Error loading global metrics:', error);
+      // Removed debug log global metrics:', error);
     }
   };
 
@@ -161,9 +163,10 @@ export default function ReportsOverviewScreen() {
       const toDate = dateRange.to ? dateRange.to.toISOString() : null;
       const districtId = districtFilter || null;
 
-      // Load DCB data from all district tables
+      // Load DCB data from all district tables (only verified collections)
       let dcbData = await queryAllDistrictDCB(
-        'collection_total, created_at, _district_name'
+        'collection_total, created_at, _district_name, financial_year',
+        { verifiedOnly: true } // Only count verified collections (is_provisional = false)
       );
 
       // Apply date filter
@@ -229,17 +232,20 @@ export default function ReportsOverviewScreen() {
         rejected_amount: rejectedAmount,
       });
     } catch (error) {
-      console.error('Error loading status breakdown:', error);
+      // Removed debug log status breakdown:', error);
     }
   };
 
   const loadTimeSeries = async () => {
     try {
-      // Load DCB data from all district tables
+      // Load DCB data from all district tables (only verified collections)
+      // OPTIMIZATION: Limit rows per table to prevent fetching all data
       const dcbData = await queryAllDistrictDCB(
-        'demand_arrears, demand_current, receiptno_date, challanno_date, created_at, _district_name',
+        'demand_arrears, demand_current, receiptno_date, challanno_date, created_at, _district_name, financial_year',
         {
           limit: 1000,
+          maxRowsPerTable: 500,
+          verifiedOnly: true, // Only count verified collections (is_provisional = false)
         }
       );
 
@@ -356,8 +362,7 @@ export default function ReportsOverviewScreen() {
           monthlyData.set(monthKey, existing);
         } catch (e) {
           // Skip invalid dates
-          console.warn('Invalid date in time series:', dateValue);
-        }
+          }
       });
 
       const timeSeriesData: TimeSeriesData[] = Array.from(monthlyData.entries())
@@ -370,7 +375,7 @@ export default function ReportsOverviewScreen() {
 
       setTimeSeries(timeSeriesData);
     } catch (error) {
-      console.error('Error loading time series:', error);
+      // Removed debug log time series:', error);
     }
   };
 
@@ -379,9 +384,11 @@ export default function ReportsOverviewScreen() {
       const fromDate = dateRange.from ? dateRange.from.toISOString() : null;
       const toDate = dateRange.to ? dateRange.to.toISOString() : null;
 
-      // Load DCB data from all district tables
+      // Load DCB data from all district tables (only verified collections)
+      // OPTIMIZATION: Limit rows per table to prevent fetching all data
       let dcbData = await queryAllDistrictDCB(
-        'collection_total, created_at, _district_name'
+        'collection_total, created_at, _district_name, financial_year',
+        { verifiedOnly: true, maxRowsPerTable: 500 } // Only count verified collections, limit rows per table
       );
 
       // Apply date filter
@@ -418,7 +425,7 @@ export default function ReportsOverviewScreen() {
 
       setTopDistricts(topDistrictsData);
     } catch (error) {
-      console.error('Error loading top districts:', error);
+      // Removed debug log top districts:', error);
     }
   };
 

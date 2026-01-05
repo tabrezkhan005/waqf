@@ -32,6 +32,7 @@ export default function AuthScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const passwordInputRef = useRef<TextInput>(null);
   const scrollViewRef = useRef<ScrollView>(null);
+  const loadingRef = useRef(false); // Guard against double-clicks
   const emailInputRef = useRef<TextInput>(null);
   const { signIn, profile, session, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -158,20 +159,15 @@ export default function AuthScreen() {
 
   // Redirect to role router when user is authenticated
   useEffect(() => {
+
     if (session && profile && !authLoading) {
       // User is logged in, redirect to role-based router
-      console.log('Auth Screen - User authenticated, redirecting to role router. Role:', profile.role, 'Profile ID:', profile.id);
-
       // Stop loading spinner
       setLoading(false);
 
       // Redirect immediately - no delay needed
-      console.log('Auth Screen - Executing redirect to role router immediately');
-      console.log('Auth Screen - Profile state:', { role: profile.role, id: profile.id });
-
       // Redirect based on role directly if we have it
       if (profile.role === 'admin') {
-        console.log('Auth Screen - Direct redirect to /admin');
         router.replace('/admin');
       } else {
         // For other roles, use role router
@@ -180,27 +176,32 @@ export default function AuthScreen() {
     } else if (session && !profile && authLoading) {
       // Session exists but profile is still loading from AuthContext
       // Keep showing loading state
-      console.log('Auth Screen - Session exists, waiting for profile to load...');
       setLoading(true);
     } else if (session && !profile && !authLoading) {
       // Session exists but profile failed to load
       // Give it a moment, then redirect anyway - let role router handle it
-      console.warn('Auth Screen - Session exists but profile is null after loading, redirecting anyway...');
       const retryTimer = setTimeout(() => {
         if (session && !profile) {
           // Still no profile, but redirect anyway - role router will handle it
-          console.log('Auth Screen - Redirecting to role router despite missing profile');
           router.replace('/_roleRouter');
         }
       }, 2000);
       return () => clearTimeout(retryTimer);
     } else if (!session && !authLoading) {
       // No session and auth is not loading, ensure loading is false
+
       setLoading(false);
+      // Stay on auth screen (don't redirect) - user should see login form
     }
   }, [session, profile, authLoading, loading, router]);
 
   const handleSignIn = async () => {
+
+    // Double-click guard
+    if (loadingRef.current || loading) {
+
+      return;
+    }
     if (!email.trim() || !password.trim()) {
       showError('Error', 'Please enter both email and password');
       return;
@@ -214,13 +215,20 @@ export default function AuthScreen() {
     }
 
     Keyboard.dismiss();
+
+    loadingRef.current = true; // Set guard immediately
     setLoading(true);
 
+
     try {
-      console.log('Attempting login for:', email.trim());
       const { error } = await signIn(email.trim(), password);
 
+
       if (error) {
+
+        setLoading(false);
+
+        loadingRef.current = false; // Clear guard
         setLoading(false);
         console.error('Login error:', error);
         console.error('Error details:', JSON.stringify(error, null, 2));
@@ -242,13 +250,14 @@ export default function AuthScreen() {
       }
 
       // Success - wait for session and profile to be set
-      console.log('Login successful! Waiting for session and profile...');
       showNotification('Login successful!', 'success', 2000);
 
       // The useEffect will handle redirect automatically once session and profile are set
       // Don't set loading to false here - let the useEffect handle it
       // This ensures the spinner shows until we're ready to redirect
     } catch (error: any) {
+
+      loadingRef.current = false; // Clear guard
       setLoading(false);
       console.error('Login exception:', error);
       showError('Sign In Failed', error?.message || 'An unexpected error occurred. Please try again.');

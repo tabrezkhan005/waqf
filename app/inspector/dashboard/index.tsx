@@ -50,7 +50,8 @@ export default function InspectorDashboardScreen() {
     return start.toISOString();
   }, []);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (isInitialLoad = false) => {
+
     // Don't load if user is logged out or profile is missing
     if (!session || !profile || !profile.district_id || loadingRef.current || !mountedRef.current) {
       if (!session || !profile) {
@@ -62,55 +63,70 @@ export default function InspectorDashboardScreen() {
 
     loadingRef.current = true;
     try {
-      setLoading(true);
+      // Only show loading indicator on initial load, not on refreshes
+      if (isInitialLoad) {
+        setLoading(true);
+      }
 
       // Double-check profile still exists (user might have logged out during load)
       if (!mountedRef.current || !session || !profile || !profile.district_id) {
         return;
       }
 
-      // Get district name
-      const { data: districtData, error: districtError } = await supabase
-        .from('districts')
-        .select('name')
-        .eq('id', profile.district_id)
-        .single();
 
-      if (districtError || !districtData) {
-        // Only log error if user is still logged in (not a logout scenario)
-        if (session && profile) {
-          console.error('District not found:', districtError);
-        }
-        return;
-      }
 
-      const districtName = (districtData as { name: string }).name;
-
-      // Load all data in parallel
+      // OPTIMIZATION: Load district name in parallel with other queries
+      // OPTIMIZATION: Use database aggregations instead of JS filtering
+      // OPTIMIZATION: Fetch only needed columns
       const [
+        districtRes,
         institutionsRes,
-        collectionsRes,
-        dcbRes,
+        pendingCountRes,
+        sentToAccountsRes,
+        thisMonthCollectionsRes,
+        collectionsForChartRes,
         notificationsRes,
       ] = await Promise.all([
-        // 1) Institutions count
+        // 1) Get district name (in parallel, not sequential)
+        supabase
+          .from('districts')
+          .select('name')
+          .eq('id', profile.district_id)
+          .single(),
+        // 2) Institutions count (optimized: head only, no data)
         supabase
           .from('institutions')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('district_id', profile.district_id)
-          .eq('is_active', true),
-        // 2) Collections by this inspector
+          .eq('is_active', true)
+          .is('deleted_at', null),
+        // 3) Collections stats (optimized: use database count instead of fetching all)
+        // Get pending count
         supabase
           .from('collections')
-          .select('status, arrear_amount, current_amount, created_at')
+          .select('id', { count: 'exact', head: true })
           .eq('inspector_id', profile.id)
-          .order('created_at', { ascending: true }),
-        // 3) DCB data for demand analytics
-        districtName ? queryDistrictDCB(
-          districtName,
-          'demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total'
-        ) : Promise.resolve([]),
-        // 4) Unread notifications count
+          .eq('status', 'pending'),
+        // Get sent_to_accounts count
+        supabase
+          .from('collections')
+          .select('id', { count: 'exact', head: true })
+          .eq('inspector_id', profile.id)
+          .eq('status', 'sent_to_accounts'),
+        // Get this month collections (only amounts, not all fields)
+        supabase
+          .from('collections')
+          .select('arrear_amount, current_amount')
+          .eq('inspector_id', profile.id)
+          .gte('created_at', monthStartIso),
+        // Get collections for monthly chart (last 6 months only, limit to recent)
+        supabase
+          .from('collections')
+          .select('arrear_amount, current_amount, created_at')
+          .eq('inspector_id', profile.id)
+          .order('created_at', { ascending: false })
+          .limit(100), // Limit to recent 100 collections for chart
+        // 4) Unread notifications count (optimized: head only)
         supabase
           .from('notifications')
           .select('id', { count: 'exact', head: true })
@@ -119,35 +135,58 @@ export default function InspectorDashboardScreen() {
           .in('type', ['payment_verified', 'payment_rejected', 'announcement']),
       ]);
 
-      const collectionsData = collectionsRes.data || [];
-      const dcbData = dcbRes || [];
 
-      // Calculate KPIs
-      const pendingCount = collectionsData.filter((c: any) => c.status === 'pending').length;
-      const sentToAccountsCount = collectionsData.filter((c: any) => c.status === 'sent_to_accounts').length;
-      const thisMonthTotal = collectionsData
-        .filter((c: any) => c.created_at && c.created_at >= monthStartIso)
-        .reduce((sum: number, c: any) => sum + Number(c.arrear_amount || 0) + Number(c.current_amount || 0), 0);
 
-      // Calculate demand totals from DCB
+      if (districtRes.error || !districtRes.data) {
+        if (session && profile) {
+          // Removed debug log:', districtRes.error);
+        }
+        return;
+      }
+
+      const districtName = districtRes.data.name;
+
+      // Now fetch DCB aggregated data (only after we have district name)
+      // OPTIMIZATION: Use database aggregation for DCB totals
+      const dcbStartTime = Date.now();
+      const dcbData = await queryDistrictDCB(
+        districtName,
+        'demand_arrears, demand_current, demand_total',
+        { verifiedOnly: true } // Only verified collections for accurate demand
+      );
+
+
+      // Calculate KPIs from optimized queries
+      const pendingCount = pendingCountRes.count || 0;
+      const sentToAccountsCount = sentToAccountsRes.count || 0;
+      const thisMonthCollections = thisMonthCollectionsRes.data || [];
+      const thisMonthTotal = thisMonthCollections.reduce(
+        (sum: number, c: any) => sum + Number(c.arrear_amount || 0) + Number(c.current_amount || 0),
+        0
+      );
+
+      // Calculate demand totals from DCB (aggregated)
       const demandArrears = dcbData.reduce((sum: number, d: any) => sum + Number(d.demand_arrears || 0), 0);
       const demandCurrent = dcbData.reduce((sum: number, d: any) => sum + Number(d.demand_current || 0), 0);
       const demandTotal = demandArrears + demandCurrent;
 
-      // Monthly chart (last 6 months) - stable calculation
+      // Monthly chart (last 6 months) - use limited data
       const now = new Date();
       const months = Array.from({ length: 6 }).map((_, idx) => {
         const d = new Date(now.getFullYear(), now.getMonth() - (5 - idx), 1);
         return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleString('en-IN', { month: 'short' }) };
       });
 
+      const collectionsForChart = collectionsForChartRes?.data || [];
       const totalsByMonth: Record<string, number> = {};
-      collectionsData.forEach((c: any) => {
+      collectionsForChart.forEach((c: any) => {
         if (!c.created_at) return;
         const d = new Date(c.created_at);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         totalsByMonth[key] = (totalsByMonth[key] || 0) + Number(c.arrear_amount || 0) + Number(c.current_amount || 0);
       });
+
+
 
       // Set state once with all calculated values
       setKpis({
@@ -183,13 +222,14 @@ export default function InspectorDashboardScreen() {
   useEffect(() => {
     // Only load if we have a session and profile
     if (session && profile && !authLoading) {
-      loadDashboard();
+      loadDashboard(true); // Pass true for initial load
     } else if (!session || !profile) {
       // User is logged out, stop loading
       setLoading(false);
       loadingRef.current = false;
     }
-  }, [session, profile, authLoading, loadDashboard]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, profile?.id, authLoading]); // Use stable IDs instead of full objects
 
   // Cleanup on unmount
   useEffect(() => {
@@ -206,7 +246,7 @@ export default function InspectorDashboardScreen() {
       return;
     }
     setRefreshing(true);
-    await loadDashboard();
+    await loadDashboard(false); // Pass false to avoid showing loading indicator
     setRefreshing(false);
   }, [session, profile, loadDashboard]);
 

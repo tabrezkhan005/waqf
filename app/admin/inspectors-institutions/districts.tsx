@@ -45,7 +45,7 @@ export default function DistrictsScreen() {
       if (error) throw error;
       setDistricts(data || []);
     } catch (error: any) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
       Alert.alert('Error', error.message || 'Failed to load districts');
     } finally {
       setLoading(false);

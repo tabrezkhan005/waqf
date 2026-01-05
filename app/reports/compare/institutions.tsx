@@ -57,7 +57,8 @@ export default function InstitutionRankingScreen() {
           `)
           .eq('is_active', true),
         import('@/lib/dcb/district-tables').then(m => m.queryAllDistrictDCB(
-          'ap_gazette_no, institution_name, collection_total, _district_name'
+          'ap_gazette_no, institution_name, collection_total, _district_name, financial_year',
+          { verifiedOnly: true, maxRowsPerTable: 500 } // Only count verified collections, limit rows per table
         ))
       ]);
 
@@ -108,7 +109,7 @@ export default function InstitutionRankingScreen() {
       const rankings = Array.from(byInstitution.values()).sort((a, b) => b.total_collected - a.total_collected);
       setInstitutions(rankings);
     } catch (e) {
-      console.error('Error loading institution rankings:', e);
+      // Removed debug log institution rankings:', e);
     } finally {
       setLoading(false);
     }

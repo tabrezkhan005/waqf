@@ -44,9 +44,11 @@ export default function DistrictAnalyticsScreen() {
         .single();
 
       // Load DCB data for this district
+      // OPTIMIZATION: Limit rows to prevent fetching all data
       const dcbData = await queryDistrictDCB(
         district.name,
-        'demand_total, collection_total, balance_total, ap_gazette_no'
+        'demand_total, collection_total, balance_total, ap_gazette_no',
+        { maxRows: 2000 }
       );
 
       const totalDemand = dcbData.reduce((sum: number, d: any) => sum + Number(d.demand_total || 0), 0);
@@ -100,7 +102,7 @@ export default function DistrictAnalyticsScreen() {
         dcbRecordsCount: dcbData.length,
       });
     } catch (error) {
-      console.error('Error loading district data:', error);
+      // Removed debug log district data:', error);
     } finally {
       setLoading(false);
     }

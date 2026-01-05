@@ -34,7 +34,8 @@ export default function MonthlyTrendsScreen() {
       setLoading(true);
 
       // Load DCB data from all district tables
-      const dcbData = await queryAllDistrictDCB('demand_total, collection_total, created_at, ap_gazette_no');
+      // OPTIMIZATION: Limit rows per table to prevent fetching all data
+      const dcbData = await queryAllDistrictDCB('demand_total, collection_total, created_at, ap_gazette_no', { maxRowsPerTable: 500 });
 
       if (!dcbData || dcbData.length === 0) {
         setTrends([]);
@@ -125,7 +126,7 @@ export default function MonthlyTrendsScreen() {
 
       setTrends(trendsData);
     } catch (error) {
-      console.error('Error loading trends:', error);
+      // Removed debug log trends:', error);
     } finally {
       setLoading(false);
     }

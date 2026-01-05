@@ -28,7 +28,7 @@ export default function ReportsProfileScreen() {
           onPress: async () => {
             setLoading(true);
             await signOut();
-            router.replace('/auth');
+            router.replace('/get-started');
           },
         },
       ]

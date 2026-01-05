@@ -95,7 +95,7 @@ export default function QueryDetailsScreen() {
         setResolutionNotes(data.resolution_notes || '');
       }
     } catch (error: any) {
-      console.error('Error loading query:', error);
+      // Removed debug log query:', error);
       Alert.alert('Error', 'Failed to load query details');
     } finally {
       setLoading(false);

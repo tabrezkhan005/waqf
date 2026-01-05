@@ -52,7 +52,7 @@ export default function InspectorNotificationsScreen() {
       const unread = (data || []).filter((n) => !n.is_read).length;
       setUnreadCount(unread);
     } catch (error) {
-      console.error('Error loading notifications:', error);
+      // Removed debug log notifications:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);

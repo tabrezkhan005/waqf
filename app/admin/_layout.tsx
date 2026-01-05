@@ -4,15 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AdminLayout() {
   const { loading, profile, session } = useAuth();
   const insets = useSafeAreaInsets();
   const [profileLoadTimeout, setProfileLoadTimeout] = React.useState(false);
-
-  console.log('AdminLayout - Loading:', loading, 'Profile:', profile?.role, 'Session:', !!session, 'Profile ID:', profile?.id);
 
   // Set timeout for profile loading
   React.useEffect(() => {
@@ -127,13 +124,11 @@ export default function AdminLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size, focused }) => (
-            <Animated.View entering={FadeIn.duration(300)}>
-              <Ionicons
-                name={focused ? 'home' : 'home-outline'}
-                size={focused ? size + 2 : size}
-                color={color}
-              />
-            </Animated.View>
+            <Ionicons
+              name={focused ? 'home' : 'home-outline'}
+              size={focused ? size + 2 : size}
+              color={color}
+            />
           ),
         }}
       />
@@ -148,13 +143,11 @@ export default function AdminLayout() {
         options={{
           title: 'Inspectors',
           tabBarIcon: ({ color, size, focused }) => (
-            <Animated.View entering={FadeIn.duration(300)}>
-              <Ionicons
-                name={focused ? 'people' : 'people-outline'}
-                size={focused ? size + 2 : size}
-                color={color}
-              />
-            </Animated.View>
+            <Ionicons
+              name={focused ? 'people' : 'people-outline'}
+              size={focused ? size + 2 : size}
+              color={color}
+            />
           ),
         }}
       />
@@ -163,13 +156,11 @@ export default function AdminLayout() {
         options={{
           title: 'Collections',
           tabBarIcon: ({ color, size, focused }) => (
-            <Animated.View entering={FadeIn.duration(300)}>
-              <Ionicons
-                name={focused ? 'cash' : 'cash-outline'}
-                size={focused ? size + 2 : size}
-                color={color}
-              />
-            </Animated.View>
+            <Ionicons
+              name={focused ? 'cash' : 'cash-outline'}
+              size={focused ? size + 2 : size}
+              color={color}
+            />
           ),
         }}
       />
@@ -178,13 +169,11 @@ export default function AdminLayout() {
         options={{
           title: 'Reports',
           tabBarIcon: ({ color, size, focused }) => (
-            <Animated.View entering={FadeIn.duration(300)}>
-              <Ionicons
-                name={focused ? 'bar-chart' : 'bar-chart-outline'}
-                size={focused ? size + 2 : size}
-                color={color}
-              />
-            </Animated.View>
+            <Ionicons
+              name={focused ? 'bar-chart' : 'bar-chart-outline'}
+              size={focused ? size + 2 : size}
+              color={color}
+            />
           ),
         }}
       />
@@ -193,13 +182,11 @@ export default function AdminLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, size, focused }) => (
-            <Animated.View entering={FadeIn.duration(300)}>
-              <Ionicons
-                name={focused ? 'settings' : 'settings-outline'}
-                size={focused ? size + 2 : size}
-                color={color}
-              />
-            </Animated.View>
+            <Ionicons
+              name={focused ? 'settings' : 'settings-outline'}
+              size={focused ? size + 2 : size}
+              color={color}
+            />
           ),
         }}
       />

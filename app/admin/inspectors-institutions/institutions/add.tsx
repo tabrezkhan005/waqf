@@ -49,13 +49,13 @@ export default function AddInstitutionScreen() {
         .order('name');
 
       if (error) {
-        console.error('Error loading districts:', error);
+        // Removed debug log districts:', error);
         Alert.alert('Error', 'Failed to load districts. Please try again.');
         return;
       }
       setDistricts(data || []);
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
       Alert.alert('Error', 'Failed to load districts. Please try again.');
     } finally {
       setLoadingDistricts(false);
@@ -116,7 +116,6 @@ export default function AddInstitutionScreen() {
           });
 
           if (dcbError) {
-            console.warn('Could not create DCB record:', dcbError);
             // Don't fail the whole operation if DCB creation fails
           }
         }

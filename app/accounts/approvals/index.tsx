@@ -59,7 +59,7 @@ export default function PendingApprovalsScreen() {
         loadNotifications(),
       ]);
     } catch (error) {
-      console.error('Error loading data:', error);
+      // Removed debug log data:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -83,7 +83,7 @@ export default function PendingApprovalsScreen() {
       const unread = (data || []).filter((n) => !n.is_read).length;
       setUnreadCount(unread);
     } catch (error) {
-      console.error('Error loading notifications:', error);
+      // Removed debug log notifications:', error);
     }
   };
 
@@ -130,16 +130,15 @@ export default function PendingApprovalsScreen() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading collections:', error);
+        // Removed debug log collections:', error);
         Alert.alert('Error', `Failed to load collections: ${error.message}`);
         setCollections([]);
         return;
       }
 
-      console.log('Loaded collections:', data?.length || 0, 'collections');
       setCollections((data as CollectionWithRelations[]) || []);
     } catch (error: any) {
-      console.error('Error loading collections:', error);
+      // Removed debug log collections:', error);
       Alert.alert('Error', `Failed to load collections: ${error.message || 'Unknown error'}`);
     }
   };
@@ -153,7 +152,7 @@ export default function PendingApprovalsScreen() {
 
       setDistricts(data || []);
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
     }
   };
 
@@ -166,14 +165,14 @@ export default function PendingApprovalsScreen() {
         .order('full_name');
 
       if (error) {
-        console.error('Error loading inspectors:', error);
+        // Removed debug log inspectors:', error);
         Alert.alert('Error', `Failed to load inspectors: ${error.message}`);
         return;
       }
 
       setInspectors((data || []).map((i) => ({ id: i.id, name: i.full_name })));
     } catch (error) {
-      console.error('Error loading inspectors:', error);
+      // Removed debug log inspectors:', error);
     }
   };
 

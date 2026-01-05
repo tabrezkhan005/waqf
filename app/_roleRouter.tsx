@@ -7,8 +7,6 @@ import React from 'react';
 export default function RoleRouter() {
   const { profile, loading, session } = useAuth();
 
-  console.log('RoleRouter - Loading:', loading, 'Profile:', profile?.role, 'Session:', !!session, 'Profile ID:', profile?.id);
-
   // Show loading while auth is initializing
   if (loading) {
     return (
@@ -21,7 +19,6 @@ export default function RoleRouter() {
 
   // If no session, redirect to auth
   if (!session) {
-    console.log('RoleRouter - No session, redirecting to auth');
     return <Redirect href="/auth" />;
   }
 
@@ -40,7 +37,6 @@ export default function RoleRouter() {
   }, [session, profile, loading]);
 
   if (session && !profile && !loading && !profileTimeout) {
-    console.log('RoleRouter - Session exists but profile not loaded yet, waiting...');
     // Give it a moment to load the profile - AuthContext should load it
     return (
       <View style={styles.container}>
@@ -53,7 +49,6 @@ export default function RoleRouter() {
   // If we have session but no profile after timeout, try to proceed anyway
   // The profile might load later, or there might be a database issue
   if (session && !profile && profileTimeout) {
-    console.warn('RoleRouter - Profile loading timeout, but session exists. Attempting to proceed...');
     // Try to redirect to admin anyway - the admin layout will handle it
     // This prevents infinite loading
     return <Redirect href="/admin" />;
@@ -61,13 +56,9 @@ export default function RoleRouter() {
 
   // Route based on role using Redirect
   if (profile && profile.role) {
-    console.log('RoleRouter - Routing to:', profile.role);
-    console.log('RoleRouter - Profile details:', { role: profile.role, id: profile.id });
-
     switch (profile.role) {
       case 'admin':
         // Redirect to admin tabs - the first tab (home) will be shown by default
-        console.log('RoleRouter - Redirecting to /admin');
         return <Redirect href="/admin" />;
       case 'inspector':
         return <Redirect href="/inspector/dashboard" />;

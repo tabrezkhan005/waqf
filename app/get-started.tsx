@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import {
     Animated,
     Dimensions,
@@ -47,11 +48,27 @@ const slides = [
 
 export default function GetStartedScreen() {
   const router = useRouter();
+  const { session, profile, loading: authLoading } = useAuth();
   const [currentSlide, setCurrentSlide] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
   const slideRef = useRef(null);
   const buttonScale = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Redirect authenticated users to their dashboard
+  useEffect(() => {
+
+    if (!authLoading && session && profile) {
+
+      // User is already authenticated, redirect to their dashboard
+      if (profile.role === 'admin') {
+        router.replace('/admin');
+      } else {
+        router.replace('/_roleRouter');
+      }
+    }
+  }, [session, profile, authLoading, router]);
+
   React.useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,

@@ -19,6 +19,7 @@ export default function SearchStack() {
         name="index"
         options={{
           title: 'Search Institutions',
+          headerShown: false,
         }}
       />
       <Stack.Screen
@@ -30,34 +31,6 @@ export default function SearchStack() {
     </Stack>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

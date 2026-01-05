@@ -144,7 +144,8 @@ export default function ExportReportsScreen() {
     try {
       setProgressText('Loading DCB rows...');
       // Load DCB data from all district tables
-      const rows = await queryAllDistrictDCB('demand_total, collection_total, ap_gazette_no, _district_name');
+      // OPTIMIZATION: Limit rows per table to prevent fetching all data
+      const rows = await queryAllDistrictDCB('demand_total, collection_total, ap_gazette_no, _district_name', { maxRowsPerTable: 1000 });
 
       const map = new Map<string, { district_name: string; total_demand: number; total_collection: number; institutions: Set<string> }>();
       (rows || []).forEach((r: any) => {
@@ -377,8 +378,10 @@ export default function ExportReportsScreen() {
       let rows: any[] = [];
 
       if (scope === 'all') {
+        // OPTIMIZATION: Limit rows per table to prevent fetching all data
         rows = await queryAllDistrictDCB(
-          'id, ap_gazette_no, institution_name, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, created_at, _district_name'
+          'id, ap_gazette_no, institution_name, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, created_at, _district_name',
+          { maxRowsPerTable: 1000 }
         );
       } else if (scope === 'district' && selectedDistrict) {
         rows = await queryDistrictDCB(
@@ -656,8 +659,10 @@ export default function ExportReportsScreen() {
       let rows: any[] = [];
 
       if (scope === 'all') {
+        // OPTIMIZATION: Limit rows per table to prevent fetching all data
         rows = await queryAllDistrictDCB(
-          'id, ap_gazette_no, institution_name, demand_total, collection_total, balance_total, created_at, _district_name'
+          'id, ap_gazette_no, institution_name, demand_total, collection_total, balance_total, created_at, _district_name',
+          { maxRowsPerTable: 1000 }
         );
       } else if (scope === 'district' && selectedDistrict) {
         rows = await queryDistrictDCB(

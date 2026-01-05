@@ -53,7 +53,7 @@ export default function InspectorsListScreen() {
       setLoading(true);
       await Promise.all([loadInspectors(), loadDistricts()]);
     } catch (error) {
-      console.error('Error loading data:', error);
+      // Removed debug log data:', error);
     } finally {
       setLoading(false);
     }
@@ -104,7 +104,7 @@ export default function InspectorsListScreen() {
 
       setInspectors(inspectorsWithData);
     } catch (error) {
-      console.error('Error loading inspectors:', error);
+      // Removed debug log inspectors:', error);
     }
   };
 
@@ -118,7 +118,7 @@ export default function InspectorsListScreen() {
       if (error) throw error;
       setDistricts(data || []);
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
     }
   };
 

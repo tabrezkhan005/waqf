@@ -33,7 +33,7 @@ function RootLayoutNav() {
         });
         setFontsLoaded(true);
       } catch (error) {
-        console.error('Error loading fonts:', error);
+        // Font loading error - continue anyway
         setFontsLoaded(true); // Continue even if fonts fail
       } finally {
         await SplashScreen.hideAsync();
@@ -46,7 +46,7 @@ function RootLayoutNav() {
   useEffect(() => {
     if (!fontsLoaded) return;
     // Ask once after first launch so exports & notifications work properly
-    requestEssentialPermissionsOnce().catch((e) => console.warn('Permission request failed:', e));
+    requestEssentialPermissionsOnce().catch(() => {}); // Silently fail
   }, [fontsLoaded]);
 
   if (!fontsLoaded) {

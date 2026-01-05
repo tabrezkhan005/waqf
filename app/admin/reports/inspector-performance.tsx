@@ -48,7 +48,7 @@ export default function InspectorPerformanceScreen() {
         .limit(10000);
 
       if (error) {
-        console.error('Error loading inspector performance:', error);
+        // Removed debug log inspector performance:', error);
         setInspectors([]);
         return;
       }
@@ -96,7 +96,7 @@ export default function InspectorPerformanceScreen() {
 
       setInspectors(performanceData);
     } catch (error) {
-      console.error('Error loading inspector performance:', error);
+      // Removed debug log inspector performance:', error);
     } finally {
       setLoading(false);
     }

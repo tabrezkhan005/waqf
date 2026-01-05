@@ -31,15 +31,12 @@ export default function CollectionsListScreen() {
 
   const loadCollections = async () => {
     if (!profile?.id) {
-      console.log('No profile ID available');
       setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
-      console.log('Loading collections for inspector:', profile.id);
-
       const { data, error } = await supabase
         .from('collections')
         .select(
@@ -56,15 +53,14 @@ export default function CollectionsListScreen() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading collections:', error);
+        // Removed debug log collections:', error);
         setCollections([]);
         return;
       }
 
-      console.log('Collections loaded:', data?.length || 0);
       setCollections((data as CollectionWithRelations[]) || []);
     } catch (error) {
-      console.error('Error loading collections:', error);
+      // Removed debug log collections:', error);
       setCollections([]);
     } finally {
       setLoading(false);

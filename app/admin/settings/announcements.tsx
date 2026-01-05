@@ -73,7 +73,7 @@ export default function AnnouncementsScreen() {
 
       setAnnouncements(formatted);
     } catch (error: any) {
-      console.error('Error loading announcements:', error);
+      // Removed debug log announcements:', error);
       Alert.alert('Error', error.message || 'Failed to load announcements');
     } finally {
       setLoading(false);

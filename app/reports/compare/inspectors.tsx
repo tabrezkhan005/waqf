@@ -39,7 +39,8 @@ export default function InspectorPerformanceScreen() {
           .eq('role', 'inspector')
           .order('full_name'),
         import('@/lib/dcb/district-tables').then(m => m.queryAllDistrictDCB(
-          'collection_arrears, collection_current, receiptno_date, challanno_date, _district_name'
+          'collection_arrears, collection_current, receiptno_date, challanno_date, _district_name, financial_year',
+          { verifiedOnly: true, maxRowsPerTable: 500 } // Only count verified collections, limit rows per table
         ))
       ]);
 
@@ -94,7 +95,7 @@ export default function InspectorPerformanceScreen() {
       summaries.sort((a, b) => (b.total_arrear + b.total_current) - (a.total_arrear + a.total_current));
       setInspectors(summaries);
     } catch (error) {
-      console.error('Error loading inspector data:', error);
+      // Removed debug log inspector data:', error);
     } finally {
       setLoading(false);
     }

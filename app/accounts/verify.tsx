@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { theme } from '@/lib/theme';
 import { districtNameToTableName } from '@/lib/dcb/district-tables';
+import { finalizeDcbVerification, rollbackDcbRejection } from '@/lib/dcb/financial-safety';
 
 export default function VerifyCollectionScreen() {
   const router = useRouter();
@@ -28,9 +29,10 @@ export default function VerifyCollectionScreen() {
   const [challanDate, setChallanDate] = useState('');
   const [remarks, setRemarks] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
-  const [showRejectionReason, setShowRejectionReason] = useState(false);
+  const [selectedAction, setSelectedAction] = useState<'approve' | 'reject' | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false); // Guard against double-clicks
 
   const totalAmount = useMemo(() => {
     if (!collection) return 0;
@@ -83,7 +85,6 @@ export default function VerifyCollectionScreen() {
       setChallanDate((data as any).challan_date || '');
       setRemarks((data as any).remarks || '');
     } catch (error) {
-      console.error('Error fetching collection:', error);
       Alert.alert('Error', 'Failed to load collection');
     } finally {
       setLoading(false);
@@ -104,12 +105,21 @@ export default function VerifyCollectionScreen() {
       }
       setImageUrls(urls);
     } catch (error) {
-      console.error('Error fetching receipts:', error);
+      // Error fetching receipts - silently fail
     }
   };
 
   const handleVerify = async (status: 'verified' | 'rejected') => {
-    if (!collection || !profile) return;
+
+    // Double-click guard
+    if (savingRef.current || saving) {
+
+      return;
+    }
+    if (!collection || !profile) {
+
+      return;
+    }
 
     if (status === 'verified' && !challanNo.trim()) {
       Alert.alert('Missing challan number', 'Please enter a challan number to verify.');
@@ -118,11 +128,17 @@ export default function VerifyCollectionScreen() {
 
     if (status === 'rejected' && !rejectionReason.trim()) {
       Alert.alert('Missing rejection reason', 'Please provide a reason for rejection.');
-      setShowRejectionReason(true);
+      setSelectedAction('reject');
       return;
     }
 
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/accounts/verify.tsx:136',message:'handleVerify called',data:{status,hasCollection:!!collection,hasProfile:!!profile,challanNo:challanNo.trim(),hasRejectionReason:!!rejectionReason.trim()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    savingRef.current = true; // Set guard immediately
     setSaving(true);
+
     try {
       // Update collection status
       const updateData: any = {
@@ -143,41 +159,56 @@ export default function VerifyCollectionScreen() {
       const { error: collectionError } = await supabase.from('collections').update(updateData).eq('id', collection.id);
       if (collectionError) throw collectionError;
 
-      // If verified, update the district-specific DCB table
-      if (status === 'verified') {
-        const institution = (collection as any).institution;
-        const district = institution?.district;
-        const apGazetteNo = institution?.ap_gazette_no;
+      // Handle DCB updates based on verification status
+      const institution = (collection as any).institution;
+      const district = institution?.district;
+      const apGazetteNo = institution?.ap_gazette_no;
 
-        if (district?.name && apGazetteNo) {
-          const tableName = districtNameToTableName(district.name);
-          const challanDateStr = challanDate || new Date().toISOString().split('T')[0];
+      if (district?.name && apGazetteNo) {
+        const tableName = districtNameToTableName(district.name);
+        const challanDateStr = challanDate || new Date().toISOString().split('T')[0];
 
-          // Update challanno_date in district DCB table
-          const { error: dcbError } = await supabase
-            .from(tableName)
-            .update({
-              challanno_date: challanDateStr,
-              receiptno_date: challanDateStr, // Also update receipt date
-              remarks: remarks.trim() || null,
-            })
-            .eq('ap_gazette_no', apGazetteNo);
+        if (status === 'verified') {
+          // Finalize DCB verification (set is_provisional = false)
+          // Note: The DCB was already updated with provisional flag when inspector sent for review
+          // This function just finalizes it (marks as verified)
+          const { error: dcbError } = await finalizeDcbVerification(
+            tableName,
+            apGazetteNo,
+            challanDateStr,
+            remarks.trim() || null
+          );
 
           if (dcbError) {
-            console.error('Error updating DCB table:', dcbError);
-            // Don't fail the whole operation, just log the error
-            // The collection is already updated, DCB update is secondary
+            // Error finalizing DCB verification - don't fail the whole operation
+          }
+        } else if (status === 'rejected') {
+          // Rollback DCB on rejection (undo provisional accumulation)
+          const { error: dcbError } = await rollbackDcbRejection(
+            tableName,
+            apGazetteNo,
+            Number(collection.arrear_amount || 0),
+            Number(collection.current_amount || 0)
+          );
+
+          if (dcbError) {
+            // Error rolling back DCB rejection - don't fail the whole operation
           }
         }
       }
 
+
       Alert.alert('Success', status === 'verified' ? 'Collection verified and DCB updated.' : 'Collection rejected.', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: () => {
+
+          router.back();
+        } },
       ]);
     } catch (error: any) {
-      console.error('Error updating collection:', error);
       Alert.alert('Error', error.message || 'Failed to update collection');
     } finally {
+
+      savingRef.current = false; // Clear guard
       setSaving(false);
     }
   };
@@ -216,8 +247,29 @@ export default function VerifyCollectionScreen() {
         <Card style={styles.infoCard}>
           <Text style={styles.title}>{collection.institution?.name || 'Unknown Institution'}</Text>
           <Text style={styles.subTitle}>
-            {collection.institution?.district?.name || 'Unknown District'} • {collection.inspector?.full_name || 'Unknown Inspector'}
+            {collection.institution?.district?.name || 'Unknown District'}
           </Text>
+          {collection.institution?.ap_gazette_no && (
+            <Text style={styles.subTitle}>Gazette No: {collection.institution.ap_gazette_no}</Text>
+          )}
+
+          <View style={{ height: theme.spacing.md }} />
+
+          <View style={styles.inspectorInfo}>
+            <Ionicons name="person-outline" size={16} color={theme.colors.primary} />
+            <Text style={styles.inspectorLabel}>Inspector: </Text>
+            <Text style={styles.inspectorName}>{collection.inspector?.full_name || 'Unknown Inspector'}</Text>
+          </View>
+          <View style={styles.collectionDateInfo}>
+            <Ionicons name="calendar-outline" size={16} color={theme.colors.muted} />
+            <Text style={styles.collectionDateText}>
+              Collection Date: {collection.collection_date ? new Date(collection.collection_date).toLocaleDateString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              }) : 'N/A'}
+            </Text>
+          </View>
 
           <View style={{ height: theme.spacing.md }} />
 
@@ -290,48 +342,107 @@ export default function VerifyCollectionScreen() {
 
         <View style={{ height: theme.spacing.md }} />
 
-        {/* Rejection Reason - Show when rejecting */}
-        <TouchableOpacity
-          style={styles.rejectionToggle}
-          onPress={() => setShowRejectionReason(!showRejectionReason)}
-          disabled={disabled}
-        >
-          <Ionicons
-            name={showRejectionReason ? 'chevron-down' : 'chevron-forward'}
-            size={20}
-            color={theme.colors.text}
-          />
-          <Text style={styles.rejectionToggleText}>Rejection Reason *</Text>
-        </TouchableOpacity>
+        <Text style={styles.sectionTitle}>Decision</Text>
+        <Card style={styles.decisionCard}>
+          <TouchableOpacity
+            style={[styles.decisionOption, selectedAction === 'approve' && styles.decisionOptionSelected]}
+            onPress={() => {
+              setSelectedAction('approve');
+              setRejectionReason(''); // Clear rejection reason when approving
+            }}
+            disabled={disabled}
+          >
+            <View style={styles.decisionOptionContent}>
+              <View style={[styles.radioButton, selectedAction === 'approve' && styles.radioButtonSelected]}>
+                {selectedAction === 'approve' && <View style={styles.radioButtonInner} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.decisionOptionLabel, selectedAction === 'approve' && styles.decisionOptionLabelSelected]}>
+                  Approve Collection
+                </Text>
+                <Text style={styles.decisionOptionDescription}>
+                  Verify and approve this collection. Challan number is required.
+                </Text>
+              </View>
+              <Ionicons
+                name="checkmark-circle"
+                size={24}
+                color={selectedAction === 'approve' ? theme.colors.success : theme.colors.muted}
+              />
+            </View>
+          </TouchableOpacity>
 
-        {showRejectionReason && (
-          <TextInput
-            style={[styles.textArea, styles.rejectionReasonInput]}
-            placeholder="Please provide a reason for rejection…"
-            placeholderTextColor={theme.colors.muted}
-            value={rejectionReason}
-            onChangeText={setRejectionReason}
-            multiline
-            numberOfLines={3}
-            editable={!saving && !disabled}
-          />
+          <View style={styles.decisionDivider} />
+
+          <TouchableOpacity
+            style={[styles.decisionOption, selectedAction === 'reject' && styles.decisionOptionSelected]}
+            onPress={() => setSelectedAction('reject')}
+            disabled={disabled}
+          >
+            <View style={styles.decisionOptionContent}>
+              <View style={[styles.radioButton, selectedAction === 'reject' && styles.radioButtonSelected]}>
+                {selectedAction === 'reject' && <View style={styles.radioButtonInner} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.decisionOptionLabel, selectedAction === 'reject' && styles.decisionOptionLabelSelected]}>
+                  Reject Collection
+                </Text>
+                <Text style={styles.decisionOptionDescription}>
+                  Reject this collection. Rejection reason is required.
+                </Text>
+              </View>
+              <Ionicons
+                name="close-circle"
+                size={24}
+                color={selectedAction === 'reject' ? theme.colors.danger : theme.colors.muted}
+              />
+            </View>
+          </TouchableOpacity>
+        </Card>
+
+        {/* Rejection Reason - Show when reject is selected */}
+        {selectedAction === 'reject' && (
+          <>
+            <View style={{ height: theme.spacing.md }} />
+            <Text style={styles.inputLabel}>Rejection Reason *</Text>
+            <TextInput
+              style={[styles.textArea, styles.rejectionReasonInput]}
+              placeholder="Please provide a detailed reason for rejection…"
+              placeholderTextColor={theme.colors.muted}
+              value={rejectionReason}
+              onChangeText={setRejectionReason}
+              multiline
+              numberOfLines={4}
+              editable={!saving && !disabled}
+            />
+          </>
         )}
 
-        <View style={{ height: theme.spacing.md }} />
+        <View style={{ height: theme.spacing.lg }} />
 
         <View style={styles.actionsRow}>
           <Button
             label="Reject"
             variant="ghost"
-            onPress={() => handleVerify('rejected')}
+            onPress={() => {
+              setSelectedAction('reject');
+              handleVerify('rejected');
+            }}
             disabled={disabled}
             loading={saving}
-            style={[styles.actionBtn, { borderColor: theme.colors.danger }]}
+            style={[
+              styles.actionBtn,
+              { borderColor: theme.colors.danger },
+              selectedAction === 'reject' && { backgroundColor: theme.colors.danger + '10' },
+            ]}
           />
           <Button
-            label="Verify"
+            label="Approve"
             variant="primary"
-            onPress={() => handleVerify('verified')}
+            onPress={() => {
+              setSelectedAction('approve');
+              handleVerify('verified');
+            }}
             disabled={disabled}
             loading={saving}
             style={styles.actionBtn}
@@ -365,6 +476,33 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   subTitle: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 12,
+    color: theme.colors.muted,
+    marginTop: 2,
+  },
+  inspectorInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: theme.spacing.xs,
+  },
+  inspectorLabel: {
+    fontFamily: 'Nunito-SemiBold',
+    fontSize: 13,
+    color: theme.colors.text,
+  },
+  inspectorName: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 13,
+    color: theme.colors.primary,
+  },
+  collectionDateInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  collectionDateText: {
     fontFamily: 'Nunito-Regular',
     fontSize: 12,
     color: theme.colors.muted,
@@ -451,16 +589,62 @@ const styles = StyleSheet.create({
   actionBtn: {
     flex: 1,
   },
-  rejectionToggle: {
+  decisionCard: {
+    padding: theme.spacing.md,
+  },
+  decisionOption: {
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radius.md,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+  },
+  decisionOptionSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary + '08',
+  },
+  decisionOptionContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
   },
-  rejectionToggleText: {
-    fontSize: 14,
-    fontFamily: 'Nunito-SemiBold',
+  radioButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: theme.colors.muted,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioButtonSelected: {
+    borderColor: theme.colors.primary,
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: theme.colors.primary,
+  },
+  decisionOptionLabel: {
+    fontFamily: 'Nunito-Bold',
+    fontSize: 16,
     color: theme.colors.text,
+    marginBottom: 4,
+  },
+  decisionOptionLabelSelected: {
+    color: theme.colors.primary,
+  },
+  decisionOptionDescription: {
+    fontFamily: 'Nunito-Regular',
+    fontSize: 12,
+    color: theme.colors.muted,
+  },
+  decisionDivider: {
+    height: 1,
+    backgroundColor: theme.colors.border,
+    marginVertical: theme.spacing.md,
   },
   rejectionReasonInput: {
     borderColor: theme.colors.danger + '40',

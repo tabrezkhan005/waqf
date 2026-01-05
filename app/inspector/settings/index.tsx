@@ -16,9 +16,10 @@ export default function InspectorSettingsScreen() {
   const [districtName, setDistrictName] = useState<string>('—');
 
   useEffect(() => {
+    let mounted = true;
     const loadDistrict = async () => {
       if (!profile?.district_id) {
-        setDistrictName('—');
+        if (mounted) setDistrictName('—');
         return;
       }
       const { data } = await supabase
@@ -26,10 +27,15 @@ export default function InspectorSettingsScreen() {
         .select('name')
         .eq('id', profile.district_id)
         .single();
-      setDistrictName(data?.name || '—');
+      if (mounted) {
+        setDistrictName(data?.name || '—');
+      }
     };
 
     loadDistrict();
+    return () => {
+      mounted = false;
+    };
   }, [profile?.district_id]);
 
   const handleLogout = () => {
@@ -45,9 +51,14 @@ export default function InspectorSettingsScreen() {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
+
             setLoading(true);
+
             await signOut();
-            router.replace('/auth');
+
+            // Redirect to get-started screen instead of auth
+            router.replace('/get-started');
+
           },
         },
       ]

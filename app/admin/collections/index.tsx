@@ -58,7 +58,7 @@ export default function CollectionsOverviewScreen() {
       setLoading(true);
       await Promise.all([loadStats(), loadCollections()]);
     } catch (error) {
-      console.error('Error loading collections:', error);
+      // Removed debug log collections:', error);
     } finally {
       setLoading(false);
     }
@@ -81,17 +81,19 @@ export default function CollectionsOverviewScreen() {
         pendingCount,
       });
     } catch (error) {
-      console.error('Error loading stats:', error);
+      // Removed debug log stats:', error);
     }
   };
 
   const loadCollections = async () => {
     try {
       // Load DCB data from all district tables
+      // OPTIMIZATION: Limit rows per table to prevent fetching all data
       const dcbData = await queryAllDistrictDCB(
         'id, collection_arrears, collection_current, collection_total, created_at, institution_name, ap_gazette_no',
         {
           orderBy: { column: 'created_at', ascending: false },
+          maxRowsPerTable: 500,
           limit: 50,
         }
       );
@@ -117,7 +119,7 @@ export default function CollectionsOverviewScreen() {
 
       setCollections(filtered);
     } catch (error) {
-      console.error('Error loading collections:', error);
+      // Removed debug log collections:', error);
     }
   };
 

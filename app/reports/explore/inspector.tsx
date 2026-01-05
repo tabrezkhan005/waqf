@@ -57,10 +57,11 @@ export default function InspectorDetailScreen() {
         return;
       }
 
-      // Query DCB data from the inspector's district table
+      // Query DCB data from the inspector's district table (only verified collections)
       const { queryAllDistrictDCB } = await import('@/lib/dcb/district-tables');
       const allDcbData = await queryAllDistrictDCB(
-        'ap_gazette_no, institution_name, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, receiptno_date, challanno_date, created_at, updated_at, _district_name'
+        'ap_gazette_no, institution_name, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, receiptno_date, challanno_date, created_at, updated_at, _district_name, financial_year',
+        { verifiedOnly: true } // Only count verified collections (is_provisional = false)
       );
 
       // Filter by inspector's district
@@ -121,7 +122,7 @@ export default function InspectorDetailScreen() {
         collections: collections as any,
       });
     } catch (error) {
-      console.error('Error loading inspector data:', error);
+      // Removed debug log inspector data:', error);
     } finally {
       setLoading(false);
     }

@@ -28,10 +28,12 @@ export default function DistrictComparisonScreen() {
       setLoading(true);
 
       // Load districts and DCB data in parallel
+      // OPTIMIZATION: Add limit to prevent fetching all rows (max 500 rows per table)
       const [{ data: districtRows }, dcbData] = await Promise.all([
         supabase.from('districts').select('id, name').order('name'),
         import('@/lib/dcb/district-tables').then(m => m.queryAllDistrictDCB(
-          'demand_arrears, demand_current, collection_arrears, collection_current, collection_total, _district_name'
+          'demand_arrears, demand_current, collection_arrears, collection_current, collection_total, _district_name, financial_year',
+          { verifiedOnly: true, maxRowsPerTable: 500 } // Only count verified collections, limit rows per table
         ))
       ]);
 
@@ -72,7 +74,7 @@ export default function DistrictComparisonScreen() {
 
       setDistricts(Array.from(byDistrict.values()));
     } catch (error) {
-      console.error('Error loading district data:', error);
+      // Removed debug log district data:', error);
     } finally {
       setLoading(false);
     }

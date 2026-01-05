@@ -5,12 +5,12 @@ import type { Database } from './database.types';
 
 // Get Supabase URL and anon key from environment variables
 // These should be set in app.json or .env file
-const supabaseUrl = 
-  Constants.expoConfig?.extra?.supabaseUrl || 
+const supabaseUrl =
+  Constants.expoConfig?.extra?.supabaseUrl ||
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
   Constants.expoConfig?.extra?.eas?.supabaseUrl;
-const supabaseAnonKey = 
-  Constants.expoConfig?.extra?.supabaseAnonKey || 
+const supabaseAnonKey =
+  Constants.expoConfig?.extra?.supabaseAnonKey ||
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
   Constants.expoConfig?.extra?.eas?.supabaseAnonKey;
 
@@ -41,7 +41,3 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
-
-
-
-

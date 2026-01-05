@@ -1,4 +1,4 @@
-const { withDangerousMod, withAppBuildGradle, withSettingsGradle } = require('expo/config-plugins');
+const { withDangerousMod } = require('expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -7,22 +7,7 @@ const path = require('path');
  * Fixes expo-linear-gradient maven plugin and compileSdk errors
  */
 function withFixGradle(config) {
-  // Fix 1: Ensure autolinking in settings.gradle
-  config = withSettingsGradle(config, (config) => {
-    if (config.modResults.contents) {
-      // Check if autolinking is already present
-      if (!config.modResults.contents.includes('autolinking')) {
-        // Add autolinking after rootProject.name
-        config.modResults.contents = config.modResults.contents.replace(
-          /(rootProject\.name\s*=\s*['"][^'"]+['"])/,
-          "$1\napply from: new File([\"node\", \"--print\", \"require.resolve('@expo/autolinking/package.json', { paths: [require.resolve('expo/package.json')] })\"].execute().text.trim(), \"../scripts/autolinking.gradle\")"
-        );
-      }
-    }
-    return config;
-  });
-
-  // Fix 2: Fix expo-linear-gradient build.gradle
+  // Fix expo-linear-gradient build.gradle
   config = withDangerousMod(config, [
     'android',
     async (config) => {
@@ -39,7 +24,7 @@ function withFixGradle(config) {
         let gradleContent = fs.readFileSync(gradlePath, 'utf8');
         let modified = false;
 
-        // Fix 1: Add maven plugin if missing (use maven-publish instead)
+        // Fix 1: Add maven-publish plugin if missing
         if (!gradleContent.includes("apply plugin: 'maven'") && !gradleContent.includes("apply plugin: 'maven-publish'")) {
           // Add maven-publish plugin (modern replacement for maven plugin)
           if (gradleContent.includes('apply plugin:')) {

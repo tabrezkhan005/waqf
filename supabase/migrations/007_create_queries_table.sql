@@ -112,3 +112,9 @@ CREATE TRIGGER update_queries_updated_at
 
 
 
+
+
+
+
+
+

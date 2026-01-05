@@ -98,7 +98,7 @@ export default function CollectionDetailsScreen() {
       if (error) throw error;
       setDcbData(data as DCBData);
     } catch (error) {
-      console.error('Error loading collection details:', error);
+      // Removed debug log collection details:', error);
     } finally {
       setLoading(false);
     }

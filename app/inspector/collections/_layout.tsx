@@ -19,6 +19,7 @@ export default function CollectionsStack() {
         name="index"
         options={{
           title: 'My Collections',
+          headerShown: false,
         }}
       />
       <Stack.Screen
@@ -30,34 +31,6 @@ export default function CollectionsStack() {
     </Stack>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

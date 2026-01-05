@@ -55,13 +55,13 @@ export default function InspectorProfileScreen() {
         .order('name');
 
       if (error) {
-        console.error('Error loading districts:', error);
+        // Removed debug log districts:', error);
         return;
       }
 
       setDistricts(data || []);
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
     }
   };
 
@@ -94,7 +94,7 @@ export default function InspectorProfileScreen() {
         .eq('inspector_id', id);
 
       if (dcbError) {
-        console.error('Error loading DCB data:', dcbError);
+        // Removed debug log DCB data:', dcbError);
       }
 
       // Calculate totals from DCB data
@@ -110,7 +110,7 @@ export default function InspectorProfileScreen() {
         .eq('inspector_id', id);
 
       if (collectionsError) {
-        console.error('Error loading collections:', collectionsError);
+        // Removed debug log collections:', collectionsError);
       }
 
       const pendingCount = collections?.filter((c) => c.status === 'pending' || c.status === 'sent_to_accounts').length || 0;
@@ -129,7 +129,7 @@ export default function InspectorProfileScreen() {
         completedCount
       });
     } catch (error) {
-      console.error('Error loading inspector:', error);
+      // Removed debug log inspector:', error);
       Alert.alert('Error', 'Failed to load inspector data');
     } finally {
       setLoading(false);

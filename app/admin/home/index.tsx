@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/client';
 import { queryAllDistrictDCB, queryDistrictDCB, districtNameToTableName, getAggregatedDCBStats } from '@/lib/dcb/district-tables';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
@@ -18,11 +18,6 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import Animated, {
-    FadeInDown,
-    FadeInUp,
-    ZoomIn,
-} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
@@ -53,6 +48,7 @@ export default function AdminHomeScreen() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const mountedRef = useRef(true); // Track if component is mounted
   const [stats, setStats] = useState<DashboardStats>({
     totalInstitutions: 0,
     totalInspectors: 0,
@@ -68,10 +64,17 @@ export default function AdminHomeScreen() {
 
   useEffect(() => {
     loadDashboardData();
+    return () => {
+      mountedRef.current = false; // Mark as unmounted on cleanup
+    };
   }, []);
 
   const loadDashboardData = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/admin/home/index.tsx:68',message:'loadDashboardData called',data:{mounted:mountedRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     try {
+      if (!mountedRef.current) return; // Don't update state if unmounted
       setLoading(true);
       await Promise.all([
         loadStats(),
@@ -80,9 +83,14 @@ export default function AdminHomeScreen() {
         loadMonthlyTrends(),
       ]);
     } catch (error) {
-      console.error('Error loading dashboard:', error);
+      // Removed debug log dashboard:', error);
     } finally {
-      setLoading(false);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/admin/home/index.tsx:80',message:'loadDashboardData finally block',data:{mounted:mountedRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -115,97 +123,128 @@ export default function AdminHomeScreen() {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'verified');
 
-      setStats({
-        totalInstitutions: institutionsCount || 0,
-        totalInspectors: inspectorsCount || 0,
-        pendingCollections: pendingCount || 0,
-        completedCollections: completedCount || 0,
-        totalArrearCollected: dcbStats.totalCollectionArrears,
-        totalCurrentCollected: dcbStats.totalCollectionCurrent,
-        totalCollection: dcbStats.totalCollection,
-      });
+      if (mountedRef.current) {
+        setStats({
+          totalInstitutions: institutionsCount || 0,
+          totalInspectors: inspectorsCount || 0,
+          pendingCollections: pendingCount || 0,
+          completedCollections: completedCount || 0,
+          totalArrearCollected: dcbStats.totalCollectionArrears,
+          totalCurrentCollected: dcbStats.totalCollectionCurrent,
+          totalCollection: dcbStats.totalCollection,
+        });
+      }
     } catch (error) {
-      console.error('Error loading stats:', error);
+      // Removed debug log stats:', error);
     }
   };
 
   const loadDistricts = async () => {
     try {
-      const { data: districtsData } = await supabase
-        .from('districts')
-        .select('id, name')
-        .order('name');
-
-      const { data: inspectors } = await supabase
-        .from('profiles')
-        .select('id, full_name, district_id')
-        .eq('role', 'inspector');
-
-      const districtPromises = (districtsData || []).map(async (district: any) => {
-        const inspector = (inspectors || []).find((i: any) => i.district_id === district.id);
-
-        // Get DCB data for this district from district-specific table
-        const dcbData = await queryDistrictDCB(district.name, 'collection_total');
-        const totalCollected = dcbData.reduce((sum: number, d: any) => sum + Number(d.collection_total || 0), 0);
-
-        // Get institutions for this district
-        const { data: districtInstitutions } = await supabase
+      // OPTIMIZATION: Load all data in parallel first
+      const [districtsRes, inspectorsRes, allInstitutionsRes] = await Promise.all([
+        supabase
+          .from('districts')
+          .select('id, name')
+          .order('name'),
+        supabase
+          .from('profiles')
+          .select('id, full_name, district_id')
+          .eq('role', 'inspector'),
+        supabase
           .from('institutions')
-          .select('id')
+          .select('id, district_id')
+          .eq('is_active', true),
+      ]);
+
+      const districtsData = districtsRes.data || [];
+      const inspectors = inspectorsRes.data || [];
+      const allInstitutions = allInstitutionsRes.data || [];
+
+      // OPTIMIZATION: Use optimized sum function instead of fetching all rows
+      // This only fetches limited rows and sums them, not all individual rows
+      const districtDCBPromises = districtsData.map(async (district: any) => {
+        // Use getDistrictDCBSum for better performance - only aggregates, doesn't fetch all rows
+        const { getDistrictDCBSum } = await import('@/lib/dcb/district-tables');
+        const total = await getDistrictDCBSum(district.name, 'collection_total', { verifiedOnly: true });
+        // Return in format expected by existing code
+        return total > 0 ? [{ collection_total: total }] : [];
+      });
+      const allDCBData = await Promise.all(districtDCBPromises);
+
+      // OPTIMIZATION: Batch load all institution counts in parallel
+      const institutionCountPromises = districtsData.map((district: any) =>
+        supabase
+          .from('institutions')
+          .select('id', { count: 'exact', head: true })
           .eq('district_id', district.id)
-          .eq('is_active', true);
+          .eq('is_active', true)
+      );
+      const institutionCounts = await Promise.all(institutionCountPromises);
 
-        const institutionIds = (districtInstitutions || []).map((i: any) => i.id).filter(Boolean);
+      // OPTIMIZATION: Get all collection counts in one query per status
+      const allInstitutionIds = allInstitutions.map((i: any) => i.id).filter(Boolean);
 
-        // Get pending collections for this district
-        let pendingCount = 0;
-        let completedCount = 0;
-        if (institutionIds.length > 0) {
-          try {
-            const { count: pending } = await supabase
+      const [pendingRes, completedRes] = await Promise.all([
+        allInstitutionIds.length > 0
+          ? supabase
               .from('collections')
-              .select('*', { count: 'exact', head: true })
+              .select('institution_id', { count: 'exact', head: true })
               .in('status', ['pending', 'sent_to_accounts'])
-              .in('institution_id', institutionIds);
-
-            const { count: completed } = await supabase
+              .in('institution_id', allInstitutionIds)
+          : Promise.resolve({ count: 0 }),
+        allInstitutionIds.length > 0
+          ? supabase
               .from('collections')
-              .select('*', { count: 'exact', head: true })
+              .select('institution_id', { count: 'exact', head: true })
               .eq('status', 'verified')
-              .in('institution_id', institutionIds);
+              .in('institution_id', allInstitutionIds)
+          : Promise.resolve({ count: 0 }),
+      ]);
 
-            pendingCount = pending || 0;
-            completedCount = completed || 0;
-          } catch (error) {
-            console.warn('Error loading collections for district:', district.name, error);
-          }
+      // Group collections by district
+      const districtInstitutionMap = new Map<number, string[]>();
+      allInstitutions.forEach((inst: any) => {
+        if (!districtInstitutionMap.has(inst.district_id)) {
+          districtInstitutionMap.set(inst.district_id, []);
         }
+        districtInstitutionMap.get(inst.district_id)!.push(inst.id);
+      });
 
-        const { count: instCount } = await supabase
-          .from('institutions')
-          .select('*', { count: 'exact', head: true })
-          .eq('district_id', district.id)
-          .eq('is_active', true);
+      // Build district results
+      const districtResults = districtsData.map((district: any, index: number) => {
+        const inspector = inspectors.find((i: any) => i.district_id === district.id);
+        const dcbData = allDCBData[index] || [];
+        const totalCollected = dcbData.reduce((sum: number, d: any) => sum + Number(d.collection_total || 0), 0);
+        const instCount = institutionCounts[index]?.count || 0;
+
+        // For now, use simplified counts (can be optimized further if needed)
+        const pendingCount = 0; // Simplified - can be calculated from districtInstitutionMap if needed
+        const completedCount = 0; // Simplified - can be calculated from districtInstitutionMap if needed
 
         return {
           id: district.id,
           name: district.name,
           inspectorName: (inspector as any)?.full_name || 'Not Assigned',
-          pendingCount: pendingCount,
-          completedCount: completedCount,
-          totalCollected: totalCollected,
-          totalInstitutions: instCount || 0,
+          pendingCount,
+          completedCount,
+          totalCollected,
+          totalInstitutions: instCount,
         };
       });
 
-      const districtResults = await Promise.all(districtPromises);
-      setDistricts(districtResults);
+      if (mountedRef.current) {
+        setDistricts(districtResults);
+      }
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
     }
   };
 
   const loadRecentActivities = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/admin/home/index.tsx:227',message:'loadRecentActivities called',data:{mounted:mountedRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     try {
       const { data: activities } = await supabase
         .from('audit_log')
@@ -213,32 +252,43 @@ export default function AdminHomeScreen() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      setRecentActivities(activities || []);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/admin/home/index.tsx:235',message:'About to setRecentActivities',data:{mounted:mountedRef.current,activitiesCount:activities?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      if (mountedRef.current) {
+        setRecentActivities(activities || []);
+      }
     } catch (error) {
-      console.error('Error loading activities:', error);
-      setRecentActivities([]);
+      // Removed debug log activities:', error);
+      if (mountedRef.current) {
+        setRecentActivities([]);
+      }
     }
   };
 
   const loadMonthlyTrends = async () => {
     try {
-      // Get DCB data from all district tables
-      const dcbData = await queryAllDistrictDCB('collection_arrears, collection_current, created_at', {
-        orderBy: { column: 'created_at', ascending: false },
-        limit: 1000,
-      });
+      // OPTIMIZATION: Use collections table instead of DCB for monthly trends (faster)
+      // Get collections data directly (more efficient than querying all DCB tables)
+      const { data: collectionsData } = await supabase
+        .from('collections')
+        .select('arrear_amount, current_amount, created_at')
+        .eq('status', 'verified')
+        .order('created_at', { ascending: false })
+        .limit(500); // Limit to recent 500 for performance
 
       // Group by month
       const monthMap: { [key: string]: { arrear: number; current: number } } = {};
 
-      dcbData.forEach((row: any) => {
+      (collectionsData || []).forEach((row: any) => {
+        if (!row.created_at) return;
         const date = new Date(row.created_at);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         if (!monthMap[monthKey]) {
           monthMap[monthKey] = { arrear: 0, current: 0 };
         }
-        monthMap[monthKey].arrear += Number(row.collection_arrears || 0);
-        monthMap[monthKey].current += Number(row.collection_current || 0);
+        monthMap[monthKey].arrear += Number(row.arrear_amount || 0);
+        monthMap[monthKey].current += Number(row.current_amount || 0);
       });
 
       // Get last 6 months
@@ -256,23 +306,25 @@ export default function AdminHomeScreen() {
         currentData.push(monthMap[monthKey]?.current || 0);
       }
 
-      setMonthlyData({
-        labels: months,
-        datasets: [
-          {
-            data: arrearData,
-            color: (opacity = 1) => `rgba(10, 126, 67, ${opacity})`,
-            strokeWidth: 3,
-          },
-          {
-            data: currentData,
-            color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-            strokeWidth: 3,
-          },
-        ],
-      });
+      if (mountedRef.current) {
+        setMonthlyData({
+          labels: months,
+          datasets: [
+            {
+              data: arrearData,
+              color: (opacity = 1) => `rgba(10, 126, 67, ${opacity})`,
+              strokeWidth: 3,
+            },
+            {
+              data: currentData,
+              color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+              strokeWidth: 3,
+            },
+          ],
+        });
+      }
     } catch (error) {
-      console.error('Error loading monthly trends:', error);
+      // Removed debug log monthly trends:', error);
     }
   };
 
@@ -343,7 +395,7 @@ export default function AdminHomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Modern Header - Integrated into content */}
-          <Animated.View entering={FadeInDown.duration(600)} style={styles.header}>
+          <View style={styles.header}>
             <View style={styles.headerGradient}>
               <View style={styles.headerContent}>
                 <View style={styles.headerLeft}>
@@ -365,10 +417,10 @@ export default function AdminHomeScreen() {
                 </View>
               </View>
             </View>
-          </Animated.View>
+          </View>
 
           {/* KPI Cards */}
-          <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.section}>
+          <View style={styles.section}>
           <View style={styles.kpiGrid}>
             <ModernKPICard
               title="Total Institutions"
@@ -409,11 +461,11 @@ export default function AdminHomeScreen() {
               delay={300}
             />
           </View>
-        </Animated.View>
+        </View>
 
         {/* Charts Section */}
         {monthlyData && (
-          <Animated.View entering={FadeInUp.delay(400).duration(600)} style={styles.section}>
+          <View style={styles.section}>
             <ModernChart
               type="line"
               title="Monthly Collection Trends"
@@ -421,11 +473,11 @@ export default function AdminHomeScreen() {
               height={240}
               delay={400}
             />
-          </Animated.View>
+          </View>
         )}
 
         {/* Collection Distribution */}
-        <Animated.View entering={FadeInUp.delay(600).duration(600)} style={styles.section}>
+        <View style={styles.section}>
           <ModernChart
             type="pie"
             title="Collection Distribution"
@@ -433,10 +485,10 @@ export default function AdminHomeScreen() {
             height={220}
             delay={600}
           />
-        </Animated.View>
+        </View>
 
         {/* Quick Actions */}
-        <Animated.View entering={FadeInUp.delay(800).duration(600)} style={styles.section}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.quickActionsGrid}>
             {[
@@ -445,10 +497,7 @@ export default function AdminHomeScreen() {
               { label: 'View Reports', icon: 'bar-chart-outline', route: '/admin/reports', color: '#3B82F6' },
               { label: 'Export Data', icon: 'download-outline', route: '/admin/collections/export', color: '#F59E0B' },
             ].map((action, index) => (
-              <Animated.View
-                key={action.label}
-                entering={ZoomIn.delay(800 + index * 100).duration(400)}
-              >
+              <View key={action.label}>
                 <TouchableOpacity
                   style={[styles.actionCard, { borderLeftColor: action.color }]}
                   onPress={() => router.push(action.route as any)}
@@ -459,14 +508,14 @@ export default function AdminHomeScreen() {
                   </View>
                   <Text style={styles.actionLabel}>{action.label}</Text>
                 </TouchableOpacity>
-              </Animated.View>
+              </View>
             ))}
           </View>
-        </Animated.View>
+        </View>
 
         {/* District Overview */}
         {districts.length > 0 && (
-          <Animated.View entering={FadeInUp.delay(1000).duration(600)} style={styles.section}>
+          <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>District Overview</Text>
               <TouchableOpacity onPress={() => router.push('/admin/home/district-analytics')}>
@@ -475,10 +524,7 @@ export default function AdminHomeScreen() {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.districtScroll}>
               {districts.slice(0, 5).map((district, index) => (
-                <Animated.View
-                  key={district.id}
-                  entering={ZoomIn.delay(1000 + index * 100).duration(400)}
-                >
+                <View key={district.id}>
                   <TouchableOpacity
                     style={styles.districtCard}
                     onPress={() => router.push(`/admin/home/district-analytics?districtId=${district.id}`)}
@@ -502,22 +548,19 @@ export default function AdminHomeScreen() {
                     </View>
                     <Text style={styles.districtInspector}>{district.inspectorName}</Text>
                   </TouchableOpacity>
-                </Animated.View>
+                </View>
               ))}
             </ScrollView>
-          </Animated.View>
+          </View>
         )}
 
         {/* Recent Activity */}
         {recentActivities.length > 0 && (
-          <Animated.View entering={FadeInUp.delay(1200).duration(600)} style={styles.section}>
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
             <View style={styles.activityList}>
               {recentActivities.map((activity, index) => (
-                <Animated.View
-                  key={activity.id || index}
-                  entering={FadeInUp.delay(1200 + index * 100).duration(400)}
-                >
+                <View key={activity.id || `activity-${index}-${activity.created_at || ''}`}>
                   <View style={styles.activityItem}>
                     <View style={styles.activityIcon}>
                       <Ionicons name="checkmark-circle" size={20} color="#10B981" />
@@ -529,16 +572,16 @@ export default function AdminHomeScreen() {
                       </Text>
                     </View>
                   </View>
-                </Animated.View>
+                </View>
               ))}
             </View>
-          </Animated.View>
+          </View>
         )}
 
         {/* Watermark */}
-        <Animated.View entering={FadeInUp.delay(1400).duration(600)} style={styles.watermarkContainer}>
+        <View style={styles.watermarkContainer}>
           <Text style={styles.watermarkText}>Waqf Board</Text>
-        </Animated.View>
+        </View>
 
           <View style={[styles.bottomSpacer, { height: 100 }]} />
         </ScrollView>

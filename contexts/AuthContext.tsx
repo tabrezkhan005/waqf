@@ -36,7 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
       if (!userId) {
-        console.warn('fetchProfile called with empty userId');
         return null;
       }
 
@@ -56,9 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
 
         // Only log if it's not a "no rows" error (which is expected for new users)
-        if (error.code !== 'PGRST116' && !error.message?.includes('No rows')) {
-          console.warn('Error fetching profile:', errorInfo);
-        }
+        // Error logging removed for performance
 
         // If it's a "no rows" error, try without .single()
         if (error.code === 'PGRST116' || error.message?.includes('No rows')) {
@@ -70,12 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           if (arrayError) {
             // Only log if it's a real error, not "no rows"
-            if (arrayError.code !== 'PGRST116' && !arrayError.message?.includes('No rows')) {
-              console.warn('Error fetching profile (array):', {
-                code: arrayError.code,
-                message: arrayError.message,
-              });
-            }
+            // Error logging removed for performance
             return null;
           }
 
@@ -94,12 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     } catch (error: any) {
       // Safely handle caught errors
-      const errorMessage = error?.message || 'Unknown error';
-      const errorName = error?.name || 'Error';
-      console.warn('Error fetching profile (catch):', {
-        name: errorName,
-        message: errorMessage,
-      });
+      // Error logging removed for performance
       return null;
     }
   };
@@ -142,18 +129,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setProfile(userProfile);
             backgroundTimeRef.current = null;
             setLoading(false);
-            console.log('Sign in successful - Profile loaded:', userProfile.role, 'ID:', userProfile.id);
             break;
           } else {
             retries++;
             if (retries < maxRetries) {
-              console.log(`Profile not found, retrying... (${retries}/${maxRetries})`);
+              // Error logging removed for performance
               await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
             }
           }
         } catch (error) {
           retries++;
-          console.warn(`Error fetching profile during sign in (attempt ${retries}):`, error);
+          // Error logging removed for performance
           if (retries < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
           }
@@ -161,7 +147,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (!userProfile) {
-        console.warn('Profile not found after all retries for user:', data.user.id);
         setLoading(false);
         // Don't return error - let onAuthStateChange handle it
         // The profile might be created by a trigger or needs to be created manually
@@ -179,6 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Sign out
   const signOut = React.useCallback(async (): Promise<void> => {
     try {
+
       // Clear background timer
       if (backgroundTimerRef.current) {
         clearTimeout(backgroundTimerRef.current);
@@ -186,14 +172,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       backgroundTimeRef.current = null;
 
+
       await supabase.auth.signOut();
+
       setSession(null);
       setUser(null);
       setProfile(null);
+
     } catch (error) {
+
       console.error('Sign out error:', error);
     }
-  }, []);
+  }, [session, profile]);
 
   // Check background inactivity and log out if needed
   const checkBackgroundInactivity = React.useCallback(() => {
@@ -211,7 +201,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (backgroundTimeRef.current) {
       const timeInBackground = Date.now() - backgroundTimeRef.current;
       if (timeInBackground >= INACTIVITY_TIMEOUT) {
-        console.log('App was in background for 3+ minutes, logging out...');
         signOut();
       }
     }
@@ -254,13 +243,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const profile = await fetchProfile(session.user.id);
           if (mounted && profile) {
             setProfile(profile);
-            console.log('Initial profile loaded:', profile.role);
-          } else if (mounted) {
-            console.warn('Failed to load profile for user:', session.user.id);
+            } else if (mounted) {
             setProfile(null);
           }
         } catch (error) {
-          console.warn('Error loading initial profile:', error);
           if (mounted) {
             setProfile(null);
           }
@@ -289,7 +275,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
       }
 
-      console.log('Auth state changed:', event, 'Session:', !!session);
       setSession(session);
       setUser(session?.user ?? null);
 
@@ -305,18 +290,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             userProfile = await fetchProfile(session.user.id);
             if (userProfile) {
               setProfile(userProfile);
-              console.log('Profile loaded from auth state change:', userProfile.role);
               break;
             } else {
               retries++;
               if (retries < maxRetries) {
-                console.log(`Profile not found, retrying... (${retries}/${maxRetries})`);
+                // Error logging removed for performance
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
             }
           } catch (error) {
             retries++;
-            console.warn(`Error loading profile (attempt ${retries}):`, error);
+            // Error logging removed for performance
             if (retries < maxRetries) {
               await new Promise(resolve => setTimeout(resolve, 1000));
             }
@@ -324,7 +308,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (!userProfile) {
-          console.warn('Profile not found after all retries for user:', session.user.id);
           // Don't set to null - keep existing profile if any, or let it be null
         }
         backgroundTimeRef.current = null;
@@ -352,7 +335,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const timeInBackground = Date.now() - backgroundTimeRef.current;
           if (timeInBackground >= INACTIVITY_TIMEOUT) {
             // User was in background for 3+ minutes, log them out
-            console.log('App was in background for 3+ minutes, logging out...');
             signOut();
           } else {
             // Reset background timer since app is now active

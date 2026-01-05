@@ -57,7 +57,7 @@ export default function InstitutionProfileScreen() {
         inspector_name: inspectorName,
       });
     } catch (error) {
-      console.error('Error loading institution:', error);
+      // Removed debug log institution:', error);
     } finally {
       setLoading(false);
     }

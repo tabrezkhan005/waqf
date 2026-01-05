@@ -67,7 +67,7 @@ export default function ExploreHomeScreen() {
         );
       }
     } catch (error) {
-      console.error('Error loading data:', error);
+      // Removed debug log data:', error);
     } finally {
       setLoading(false);
     }

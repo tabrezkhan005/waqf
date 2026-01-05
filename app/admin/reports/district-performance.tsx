@@ -33,7 +33,8 @@ export default function DistrictPerformanceScreen() {
       setLoading(true);
 
       // Load DCB data from all district tables
-      const dcbData = await queryAllDistrictDCB('demand_total, collection_total, ap_gazette_no, institution_name');
+      // OPTIMIZATION: Limit rows per table to prevent fetching all data
+      const dcbData = await queryAllDistrictDCB('demand_total, collection_total, ap_gazette_no, institution_name', { maxRowsPerTable: 500 });
 
       if (!dcbData || dcbData.length === 0) {
         setDistrictData([]);
@@ -77,7 +78,7 @@ export default function DistrictPerformanceScreen() {
 
       setDistrictData(performanceData);
     } catch (error) {
-      console.error('Error loading district data:', error);
+      // Removed debug log district data:', error);
     } finally {
       setLoading(false);
     }

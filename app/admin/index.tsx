@@ -3,9 +3,7 @@ import { Redirect } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 export default function AdminIndex() {
-  const { loading, profile, session } = useAuth();
-
-  console.log('AdminIndex - Loading:', loading, 'Profile:', profile?.role, 'Session:', !!session);
+  const { loading } = useAuth();
 
   // Show loading while checking auth
   if (loading) {
@@ -17,7 +15,6 @@ export default function AdminIndex() {
   }
 
   // Redirect to home dashboard
-  console.log('AdminIndex - Redirecting to /admin/home');
   return <Redirect href="/admin/home" />;
 }
 

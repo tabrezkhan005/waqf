@@ -64,13 +64,13 @@ export default function CollectionDetailScreen() {
         .single();
 
       if (error) {
-        console.error('Error loading collection details:', error);
+        // Removed debug log collection details:', error);
         return;
       }
 
       setCollection(data as CollectionWithRelations);
     } catch (error) {
-      console.error('Error loading collection details:', error);
+      // Removed debug log collection details:', error);
     } finally {
       setLoading(false);
     }

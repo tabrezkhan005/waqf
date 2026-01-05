@@ -19,39 +19,12 @@ export default function SettingsStack() {
         name="index"
         options={{
           title: 'Settings',
+          headerShown: false,
         }}
       />
     </Stack>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

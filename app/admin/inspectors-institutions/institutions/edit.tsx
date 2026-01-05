@@ -56,7 +56,7 @@ export default function EditInstitutionScreen() {
 
       setDistricts(districtsData || []);
     } catch (error) {
-      console.error('Error loading institution:', error);
+      // Removed debug log institution:', error);
       Alert.alert('Error', 'Failed to load institution data');
     } finally {
       setLoading(false);

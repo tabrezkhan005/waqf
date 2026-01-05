@@ -46,7 +46,7 @@ export default function InstitutionsListScreen() {
       setLoading(true);
       await Promise.all([loadInstitutions(), loadDistricts()]);
     } catch (error) {
-      console.error('Error loading data:', error);
+      // Removed debug log data:', error);
     } finally {
       setLoading(false);
     }
@@ -91,7 +91,7 @@ export default function InstitutionsListScreen() {
 
       setInstitutions(institutionsWithData);
     } catch (error) {
-      console.error('Error loading institutions:', error);
+      // Removed debug log institutions:', error);
     }
   };
 
@@ -105,7 +105,7 @@ export default function InstitutionsListScreen() {
       if (error) throw error;
       setDistricts(data || []);
     } catch (error) {
-      console.error('Error loading districts:', error);
+      // Removed debug log districts:', error);
     }
   };
 

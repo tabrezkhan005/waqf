@@ -63,7 +63,7 @@ export default function QueriesScreen() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading queries:', error);
+        // Removed debug log queries:', error);
         Alert.alert('Error', 'Failed to load queries. Please try again.');
         setQueries([]);
         return;
@@ -90,7 +90,7 @@ export default function QueriesScreen() {
 
       setQueries(formattedQueries);
     } catch (error) {
-      console.error('Error loading queries:', error);
+      // Removed debug log queries:', error);
       Alert.alert('Error', 'Failed to load queries. Please try again.');
       setQueries([]);
     } finally {

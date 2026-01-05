@@ -7,7 +7,7 @@
     "icon": "./assets/images/waqf.png",
     "scheme": "waqf",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.waqf.dcb",
@@ -47,8 +47,7 @@
             "backgroundColor": "#000000"
           }
         }
-      ],
-      "./plugins/with-fix-gradle.js"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -62,6 +61,9 @@
     },
     "runtimeVersion": {
       "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7aecdd75-0957-4d07-a3c8-2069995fce64"
     }
   }
 }

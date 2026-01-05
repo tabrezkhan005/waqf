@@ -50,7 +50,7 @@ export default function EditInspectorScreen() {
 
       setDistricts(districtsData || []);
     } catch (error) {
-      console.error('Error loading inspector:', error);
+      // Removed debug log inspector:', error);
       Alert.alert('Error', 'Failed to load inspector data');
     } finally {
       setLoading(false);

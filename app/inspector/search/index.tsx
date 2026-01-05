@@ -43,53 +43,58 @@ export default function InstitutionSearchScreen() {
     }
 
     try {
+
       setLoading(true);
       setDistrictError(null);
 
-      // Load institutions filtered by inspector's district_id.
-      // Avoid querying `districts` separately here (can fail under RLS).
-      const { data, error } = await supabase
-        .from('institutions')
-        .select(`
-          *,
-          district:districts (
-            id,
-            name,
-            code
-          )
-        `)
-        .eq('district_id', profile.district_id)
-        .eq('is_active', true)
-        .order('name');
+      // OPTIMIZATION: Load institutions and collections index in parallel
+      const [institutionsRes, collectionsRes] = await Promise.all([
+        // Load institutions filtered by inspector's district_id.
+        // Avoid querying `districts` separately here (can fail under RLS).
+        supabase
+          .from('institutions')
+          .select(`
+            *,
+            district:districts (
+              id,
+              name,
+              code
+            )
+          `)
+          .eq('district_id', profile.district_id)
+          .eq('is_active', true)
+          .is('deleted_at', null)
+          .order('name'),
+        // Load collections index in parallel
+        profile?.id ? supabase
+          .from('collections')
+          .select('institution_id')
+          .eq('inspector_id', profile.id) : Promise.resolve({ data: [], error: null }),
+      ]);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/index.tsx:73',message:'Promise.all completed',data:{institutionsError:!!institutionsRes.error,collectionsError:!!collectionsRes.error,institutionsCount:institutionsRes.data?.length,collectionsCount:collectionsRes.data?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
-      if (error) {
-        console.error('Error loading institutions:', error);
+      if (institutionsRes.error) {
+        // Removed debug log institutions:', institutionsRes.error);
         setInstitutions([]);
         setDistrictError('Unable to load institutions for your district. Please try again.');
         return;
       }
-      setInstitutions((data as InstitutionWithDistrict[]) || []);
+      setInstitutions((institutionsRes.data as InstitutionWithDistrict[]) || []);
+
+      // Set collected institution IDs from parallel query
+      if (collectionsRes.data) {
+        setCollectedInstitutionIds(new Set((collectionsRes.data || []).map((c: any) => c.institution_id)));
+      }
     } catch (error) {
-      console.error('Error loading institutions:', error);
+      // Removed debug log institutions:', error);
       setInstitutions([]);
       setDistrictError('Unable to load institutions. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-
-  const loadCollectionsIndex = async () => {
-    if (!profile?.id) return;
-    const { data } = await supabase
-      .from('collections')
-      .select('institution_id')
-      .eq('inspector_id', profile.id);
-    setCollectedInstitutionIds(new Set((data || []).map((c: any) => c.institution_id)));
-  };
-
-  useEffect(() => {
-    loadCollectionsIndex();
-  }, [profile?.id]);
 
   const filteredInstitutions = useMemo(() => {
     let filtered = [...institutions];

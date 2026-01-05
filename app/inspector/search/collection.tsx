@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,9 +14,15 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Crypto from 'expo-crypto';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase/client';
 import { queryDistrictDCB, districtNameToTableName, getDistrictName } from '@/lib/dcb/district-tables';
+import {
+  validateOverCollection,
+  updateDcbProvisional,
+  getCurrentFinancialYear,
+} from '@/lib/dcb/financial-safety';
 import type { Institution, InstitutionWithDCB, InstitutionDCB } from '@/lib/types/database';
 
 export default function InstitutionCollectionScreen() {
@@ -27,13 +33,16 @@ export default function InstitutionCollectionScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false); // Guard against double-clicks
   const [institution, setInstitution] = useState<Institution | null>(null);
   const [dcb, setDcb] = useState<InstitutionDCB | null>(null);
+  const [districtName, setDistrictName] = useState<string | null>(null); // Cache district name to avoid re-fetching
 
-  // Collection inputs
+  // Collection inputs - NEW payment amounts only (not cumulative)
   const [cArrear, setCArrear] = useState('');
   const [cCurrent, setCCurrent] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [overCollectionReason, setOverCollectionReason] = useState('');
 
   // Images
   const [billReceipt, setBillReceipt] = useState<string | null>(null);
@@ -41,9 +50,18 @@ export default function InstitutionCollectionScreen() {
 
   // Computed values
   const cTotal = (parseFloat(cArrear) || 0) + (parseFloat(cCurrent) || 0);
-  // Balance = Demand - Collection
-  const bArrear = (dcb?.demand_arrears || 0) - (parseFloat(cArrear) || 0);
-  const bCurrent = (dcb?.demand_current || 0) - (parseFloat(cCurrent) || 0);
+  // Existing collections from DCB (cumulative totals)
+  const existingCollectionArrears = dcb?.collection_arrears || 0;
+  const existingCollectionCurrent = dcb?.collection_current || 0;
+  // New payment amounts (what inspector is entering now)
+  const newCollectionArrears = parseFloat(cArrear) || 0;
+  const newCollectionCurrent = parseFloat(cCurrent) || 0;
+  // Total collections after adding new payment (for display)
+  const totalCollectionArrears = existingCollectionArrears + newCollectionArrears;
+  const totalCollectionCurrent = existingCollectionCurrent + newCollectionCurrent;
+  // Balance = Demand - Total Collection (existing + new)
+  const bArrear = (dcb?.demand_arrears || 0) - totalCollectionArrears;
+  const bCurrent = (dcb?.demand_current || 0) - totalCollectionCurrent;
   const bTotal = bArrear + bCurrent;
 
   useEffect(() => {
@@ -58,18 +76,35 @@ export default function InstitutionCollectionScreen() {
     try {
       setLoading(true);
 
-      // Load institution
-      const { data: institutionData, error: instError } = await supabase
-        .from('institutions')
-        .select('*')
-        .eq('id', institutionId)
-        .single();
+      // OPTIMIZATION: Load institution and district name in parallel
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:80',message:'Starting Promise.all for institution data',data:{institutionId,districtId:profile?.district_id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      const [institutionRes, districtRes] = await Promise.all([
+        // Load institution
+        supabase
+          .from('institutions')
+          .select('*')
+          .eq('id', institutionId)
+          .single(),
+        // Get district name in parallel (not sequential)
+        supabase
+          .from('districts')
+          .select('name')
+          .eq('id', profile.district_id)
+          .single(),
+      ]);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:93',message:'Promise.all completed for institution data',data:{institutionError:!!institutionRes.error,districtError:!!districtRes.error,hasInstitution:!!institutionRes.data,hasDistrict:!!districtRes.data},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
 
-      if (instError) {
-        console.error('Error loading institution:', instError);
+      if (institutionRes.error) {
+        // Removed debug log institution:', institutionRes.error);
         Alert.alert('Error', 'Failed to load institution data');
         return;
       }
+
+      const institutionData = institutionRes.data;
 
       // Verify institution belongs to inspector's district
       if (institutionData.district_id !== profile.district_id) {
@@ -79,15 +114,14 @@ export default function InstitutionCollectionScreen() {
 
       setInstitution(institutionData);
 
-      // Get district name from inspector's district_id (more reliable)
-      // This ensures we use the inspector's assigned district, not the institution's
-      const districtName = await getDistrictName(profile.district_id);
-
-      if (!districtName) {
-        console.error('Error loading district for inspector');
+      if (districtRes.error || !districtRes.data) {
+        // Removed debug log district for inspector');
         Alert.alert('Error', 'District not found. Please contact admin.');
         return;
       }
+
+      const districtNameValue = districtRes.data.name;
+      setDistrictName(districtNameValue); // Cache district name
 
       // Load DCB from district-specific table using ap_gazette_no
       const apGazetteNo = institutionData.ap_gazette_no;
@@ -96,15 +130,22 @@ export default function InstitutionCollectionScreen() {
         return;
       }
 
-      const tableName = districtNameToTableName(districtName);
+      const tableName = districtNameToTableName(districtNameValue);
+      // OPTIMIZATION: Select only needed columns instead of '*'
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:135',message:'Querying DCB',data:{tableName,apGazetteNo},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       const { data: dcbData, error: dcbError } = await supabase
         .from(tableName)
-        .select('*')
+        .select('ap_gazette_no, institution_name, demand_arrears, demand_current, demand_total, collection_arrears, collection_current, collection_total, balance_arrears, balance_current, balance_total, receiptno_date, challanno_date, remarks, financial_year')
         .eq('ap_gazette_no', apGazetteNo)
-        .single();
+        .maybeSingle();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:139',message:'DCB query result',data:{hasData:!!dcbData,hasError:!!dcbError,errorCode:dcbError?.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
 
       if (dcbError && dcbError.code !== 'PGRST116') {
-        console.error('Error loading DCB:', dcbError);
+        // Removed debug log DCB:', dcbError);
         // If DCB doesn't exist, that's okay - we'll show empty values
       }
 
@@ -114,13 +155,14 @@ export default function InstitutionCollectionScreen() {
           ...dcbData,
           ap_no: dcbData.ap_gazette_no,
           institution_name: dcbData.institution_name,
-          district_name: districtName,
+          district_name: districtNameValue,
           inspector_name: profile.full_name,
         };
         setDcb(mappedDcb as any);
-        // Pre-fill collection values if they exist
-        setCArrear((dcbData.collection_arrears || 0).toString());
-        setCCurrent((dcbData.collection_current || 0).toString());
+        // Don't pre-fill collection inputs - they should be empty for NEW payments
+        // Existing collections are shown in the UI as read-only
+        setCArrear(''); // Empty - inspector enters NEW payment amount
+        setCCurrent(''); // Empty - inspector enters NEW payment amount
         setRemarks(dcbData.remarks || '');
       } else {
         // DCB entry doesn't exist - show empty values
@@ -139,13 +181,13 @@ export default function InstitutionCollectionScreen() {
           remarks: null,
           ap_no: apGazetteNo,
           institution_name: institutionData.name,
-          district_name: districtName,
+          district_name: districtNameValue,
           inspector_name: profile.full_name,
         };
         setDcb(emptyDcb as any);
       }
     } catch (error) {
-      console.error('Error loading data:', error);
+      // Removed debug log data:', error);
       Alert.alert('Error', 'Failed to load institution data');
     } finally {
       setLoading(false);
@@ -175,7 +217,7 @@ export default function InstitutionCollectionScreen() {
     }
   };
 
-  const validateInputs = (): boolean => {
+  const validateInputs = async (): Promise<boolean> => {
     const cArrearNum = parseFloat(cArrear);
     const cCurrentNum = parseFloat(cCurrent);
 
@@ -189,88 +231,188 @@ export default function InstitutionCollectionScreen() {
       return false;
     }
 
-    if (cArrearNum > (dcb?.demand_arrears || 0)) {
-      Alert.alert(
-        'Validation Error',
-        `Collection arrear (${cArrearNum}) cannot exceed demand arrear (${dcb?.demand_arrears || 0})`
-      );
+    // Basic validation: check if both are zero
+    if (cArrearNum === 0 && cCurrentNum === 0) {
+      Alert.alert('Validation Error', 'Please enter at least one collection amount');
       return false;
     }
 
-    if (cCurrentNum > (dcb?.demand_current || 0)) {
-      Alert.alert(
-        'Validation Error',
-        `Collection current (${cCurrentNum}) cannot exceed demand current (${dcb?.demand_current || 0})`
+    // Financial Safety: Check for over-collection using database function
+    if (!institution || !profile?.district_id) {
+      return false;
+    }
+
+    // OPTIMIZATION: Use cached district name instead of re-fetching
+    if (!districtName) {
+      // Fallback: fetch if not cached (shouldn't happen normally)
+      const fetchedDistrictName = await getDistrictName(profile.district_id);
+      if (!fetchedDistrictName) {
+        return false;
+      }
+      setDistrictName(fetchedDistrictName);
+      // Use the fetched name for this validation
+      const validationError = await validateOverCollection(
+        fetchedDistrictName,
+        institution.ap_gazette_no,
+        cArrearNum,
+        cCurrentNum,
+        overCollectionReason
       );
+      if (validationError) {
+        Alert.alert('Over-Collection Detected', validationError);
+        return false;
+      }
+      return true;
+    }
+
+    const apGazetteNo = institution.ap_gazette_no;
+    if (!apGazetteNo) {
+      return false;
+    }
+
+    // Validate over-collection (requires reason if exceeds remaining balance)
+    const validationError = await validateOverCollection(
+      districtName, // Use cached district name
+      institution.ap_gazette_no,
+      cArrearNum,
+      cCurrentNum,
+      overCollectionReason
+    );
+
+    if (validationError) {
+      Alert.alert('Over-Collection Detected', validationError);
       return false;
     }
 
     return true;
   };
 
-  const uploadImage = async (uri: string, path: string): Promise<string | null> => {
+  const uploadImage = async (
+    uri: string,
+    path: string,
+    type: 'bill' | 'transaction',
+    collectionId?: number
+  ): Promise<{ path: string; hash: string } | null> => {
+
     try {
       const response = await fetch(uri);
-      const blob = await response.blob();
-      const fileExt = uri.split('.').pop();
-      const fileName = `${path}.${fileExt}`;
+      if (!response.ok) {
 
-      const { error: uploadError } = await supabase.storage
-        .from('receipts')
-        .upload(fileName, blob, {
-          contentType: `image/${fileExt}`,
-        });
-
-      if (uploadError) {
-        console.error('Error uploading image:', uploadError);
+        // Removed debug log fetch image URI:', response.status, response.statusText);
         return null;
       }
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('receipts')
-        .getPublicUrl(fileName);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
 
-      return publicUrl;
-    } catch (error) {
+      // Compute SHA-256 hash for integrity
+      const hash = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        Array.from(uint8Array).map((b) => String.fromCharCode(b)).join('')
+      );
+
+      // Check for duplicate (if collectionId is provided)
+      if (collectionId) {
+        const { data: existing } = await supabase
+          .from('receipts')
+          .select('id')
+          .eq('collection_id', collectionId)
+          .eq('file_hash', hash)
+          .single();
+
+        if (existing) {
+
+          Alert.alert('Duplicate', 'This receipt has already been uploaded.');
+          return null;
+        }
+      }
+
+      const fileExt = uri.split('.').pop();
+      const fileName = `${path}.${fileExt}`;
+      const bucketName = type === 'bill' ? 'receipt' : 'bank-receipt';
+
+
+      // Check if bucket exists by attempting to list it
+      const { data: bucketList, error: bucketError } = await supabase.storage.listBuckets();
+
+      if (bucketError || !bucketList?.find(b => b.name === bucketName)) {
+
+        Alert.alert(
+          'Bucket Not Found',
+          `Storage bucket "${bucketName}" does not exist. Please contact administrator to create it.`
+        );
+        return null;
+      }
+
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(fileName, blob, {
+          contentType: `image/${fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+
+        console.error(`Error uploading image to ${bucketName}:`, uploadError);
+        Alert.alert(
+          'Upload Error',
+          `Failed to upload ${type === 'bill' ? 'bill receipt' : 'bank receipt'}.\n\nError: ${uploadError.message}`
+        );
+        return null;
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from(bucketName).getPublicUrl(fileName);
+
+
+      return { path: publicUrl, hash };
+    } catch (error: any) {
+
       console.error('Error uploading image:', error);
+      Alert.alert('Upload Error', `Failed to upload image: ${error?.message || 'Unknown error'}`);
       return null;
     }
   };
 
   const handleSave = async () => {
-    if (!institutionId || !profile || !validateInputs()) return;
+
+    // Double-click guard
+    if (savingRef.current || saving) {
+
+      return;
+    }
+    if (!institutionId || !profile) {
+
+      return;
+    }
+
+
+    // Validate inputs (includes over-collection check)
+    const isValid = await validateInputs();
+    if (!isValid) {
+
+      return;
+    }
+
 
     try {
+      savingRef.current = true; // Set guard immediately
       setSaving(true);
+
 
       const cArrearNum = parseFloat(cArrear);
       const cCurrentNum = parseFloat(cCurrent);
+      const collectionDate = new Date().toISOString().split('T')[0];
+      const financialYear = getCurrentFinancialYear(new Date(collectionDate));
 
-      // Upload images if selected
-      let billReceiptPath: string | null = null;
-      let transactionReceiptPath: string | null = null;
-
-      if (billReceipt) {
-        billReceiptPath = await uploadImage(
-          billReceipt,
-          `${profile.id}/${institutionId}/bill_${Date.now()}`
-        );
-      }
-
-      if (transactionReceipt) {
-        transactionReceiptPath = await uploadImage(
-          transactionReceipt,
-          `${profile.id}/${institutionId}/transaction_${Date.now()}`
-        );
-      }
-
-      // Get district name and table name from inspector's district_id
+      // Get district name and table name
       if (!institution || !profile?.district_id) {
         Alert.alert('Error', 'Missing institution or district information');
         return;
       }
 
-      const districtName = await getDistrictName(profile.district_id);
+      // OPTIMIZATION: Use cached district name instead of re-fetching
       if (!districtName) {
         Alert.alert('Error', 'District not found. Please contact admin.');
         return;
@@ -284,58 +426,32 @@ export default function InstitutionCollectionScreen() {
         return;
       }
 
-      // Calculate totals and balances
-      const demandArrears = dcb?.demand_arrears || 0;
-      const demandCurrent = dcb?.demand_current || 0;
-      const demandTotal = demandArrears + demandCurrent;
-      const collectionTotal = cArrearNum + cCurrentNum;
-      const balanceArrears = demandArrears - cArrearNum;
-      const balanceCurrent = demandCurrent - cCurrentNum;
-      const balanceTotal = balanceArrears + balanceCurrent;
-
-      // Update DCB collection values in district-specific table
-      const updateData: any = {
-        collection_arrears: cArrearNum,
-        collection_current: cCurrentNum,
-        collection_total: collectionTotal,
-        balance_arrears: balanceArrears,
-        balance_current: balanceCurrent,
-        balance_total: balanceTotal,
-        remarks: remarks.trim() || null,
-      };
-
-      // Add receipt/challan dates if needed (these columns exist in district tables)
-      // Note: receiptno_date and challanno_date are text fields
-
-      const { error: dcbError } = await supabase
-        .from(tableName)
-        .update(updateData)
-        .eq('ap_gazette_no', apGazetteNo);
-
-      if (dcbError) {
-        console.error('Error updating DCB:', dcbError);
-        Alert.alert('Error', 'Failed to save collection data');
-        return;
-      }
-
-      // Create or update collection record
-      const { data: existingCollection } = await supabase
+      // Create or update collection record first
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:424',message:'Checking for existing collection (handleSave)',data:{institutionId,collectionDate,profileId:profile?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      const { data: existingCollection, error: existingError } = await supabase
         .from('collections')
         .select('id, status')
         .eq('institution_id', institutionId)
         .eq('inspector_id', profile.id)
-        .eq('collection_date', new Date().toISOString().split('T')[0])
-        .single();
+        .eq('collection_date', collectionDate)
+        .maybeSingle();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:431',message:'Existing collection query result (handleSave)',data:{hasData:!!existingCollection,hasError:!!existingError,errorCode:existingError?.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+
+      let collectionId: number;
 
       if (existingCollection) {
-        // Update existing collection (preserve status if already sent)
+        // Update existing collection
         const { error: updateError } = await supabase
           .from('collections')
           .update({
             arrear_amount: cArrearNum,
             current_amount: cCurrentNum,
-            total_amount: cArrearNum + cCurrentNum,
-            // Don't change status if already sent to accounts or verified/rejected
+            financial_year: financialYear,
+            over_collection_reason: overCollectionReason.trim() || null,
             status: existingCollection.status === 'pending' ? 'pending' : existingCollection.status,
           })
           .eq('id', existingCollection.id);
@@ -346,24 +462,7 @@ export default function InstitutionCollectionScreen() {
           return;
         }
 
-        // Update receipts if uploaded
-        if (billReceiptPath) {
-          await supabase.from('receipts').upsert({
-            collection_id: existingCollection.id,
-            type: 'bill',
-            file_path: billReceiptPath,
-            file_name: `bill_${Date.now()}.jpg`,
-          });
-        }
-
-        if (transactionReceiptPath) {
-          await supabase.from('receipts').upsert({
-            collection_id: existingCollection.id,
-            type: 'transaction',
-            file_path: transactionReceiptPath,
-            file_name: `transaction_${Date.now()}.jpg`,
-          });
-        }
+        collectionId = existingCollection.id;
       } else {
         // Create new collection
         const { data: newCollection, error: createError } = await supabase
@@ -373,9 +472,10 @@ export default function InstitutionCollectionScreen() {
             inspector_id: profile.id,
             arrear_amount: cArrearNum,
             current_amount: cCurrentNum,
-            total_amount: cArrearNum + cCurrentNum,
+            financial_year: financialYear,
+            over_collection_reason: overCollectionReason.trim() || null,
             status: 'pending',
-            collection_date: new Date().toISOString().split('T')[0],
+            collection_date: collectionDate,
           })
           .select()
           .single();
@@ -386,78 +486,127 @@ export default function InstitutionCollectionScreen() {
           return;
         }
 
-        // Upload receipts
-        if (billReceiptPath && newCollection) {
-          await supabase.from('receipts').insert({
-            collection_id: newCollection.id,
-            type: 'bill',
-            file_path: billReceiptPath,
-            file_name: `bill_${Date.now()}.jpg`,
-          });
-        }
+        collectionId = newCollection.id;
+      }
 
-        if (transactionReceiptPath && newCollection) {
-          await supabase.from('receipts').insert({
-            collection_id: newCollection.id,
-            type: 'transaction',
-            file_path: transactionReceiptPath,
-            file_name: `transaction_${Date.now()}.jpg`,
+      // Upload images with hash computation
+      if (billReceipt) {
+        const uploadResult = await uploadImage(
+          billReceipt,
+          `${profile.id}/${institutionId}/bill_${Date.now()}`,
+          'bill',
+          collectionId
+        );
+        if (uploadResult) {
+          await supabase.from('receipts').upsert({
+            collection_id: collectionId,
+            type: 'bill',
+            file_path: uploadResult.path,
+            file_name: `bill_${Date.now()}.jpg`,
+            file_hash: uploadResult.hash,
           });
         }
       }
 
+      if (transactionReceipt) {
+        const uploadResult = await uploadImage(
+          transactionReceipt,
+          `${profile.id}/${institutionId}/transaction_${Date.now()}`,
+          'transaction',
+          collectionId
+        );
+        if (uploadResult) {
+          await supabase.from('receipts').upsert({
+            collection_id: collectionId,
+            type: 'transaction',
+            file_path: uploadResult.path,
+            file_name: `transaction_${Date.now()}.jpg`,
+            file_hash: uploadResult.hash,
+          });
+        }
+      }
+
+      // DRAFT: Update DCB with provisional flag (for display purposes)
+      // This marks the collection as provisional until verified
+      const { error: dcbError } = await updateDcbProvisional(
+        tableName,
+        apGazetteNo,
+        cArrearNum,
+        cCurrentNum,
+        remarks.trim() || null,
+        financialYear
+      );
+
+      if (dcbError) {
+        console.error('Error updating DCB provisional:', dcbError);
+        // Don't fail the whole operation, just log the error
+      }
+
+
       Alert.alert('Success', 'Collection saved successfully', [
         {
           text: 'View Collections',
-          onPress: () => router.push('/inspector/collections'),
+          onPress: () => {
+
+            router.push('/inspector/collections');
+          },
         },
         {
           text: 'OK',
-          onPress: () => router.back(),
+          onPress: () => {
+
+            router.back();
+          },
         },
       ]);
-    } catch (error) {
+    } catch (error: any) {
+
       console.error('Error saving collection:', error);
       Alert.alert('Error', 'Failed to save collection');
     } finally {
+
+      savingRef.current = false; // Clear guard
       setSaving(false);
     }
   };
 
   const handleSendForReview = async () => {
-    if (!institutionId || !profile || !validateInputs()) return;
+
+    // Double-click guard
+    if (savingRef.current || saving) {
+
+      return;
+    }
+    if (!institutionId || !profile) {
+
+      return;
+    }
+
+
+    // Validate inputs (includes over-collection check)
+    const isValid = await validateInputs();
+    if (!isValid) {
+
+      return;
+    }
 
     try {
+      savingRef.current = true; // Set guard immediately
       setSaving(true);
+
 
       const cArrearNum = parseFloat(cArrear);
       const cCurrentNum = parseFloat(cCurrent);
+      const collectionDate = new Date().toISOString().split('T')[0];
+      const financialYear = getCurrentFinancialYear(new Date(collectionDate));
 
-      // Upload images if selected
-      let billReceiptPath: string | null = null;
-      let transactionReceiptPath: string | null = null;
-
-      if (billReceipt) {
-        billReceiptPath = await uploadImage(
-          billReceipt,
-          `${profile.id}/${institutionId}/bill_${Date.now()}`
-        );
-      }
-
-      if (transactionReceipt) {
-        transactionReceiptPath = await uploadImage(
-          transactionReceipt,
-          `${profile.id}/${institutionId}/transaction_${Date.now()}`
-        );
-      }
-
-      // Get district name and table name from inspector's district_id
+      // Get district name and table name
       if (!institution || !profile?.district_id) {
         Alert.alert('Error', 'Missing institution or district information');
         return;
       }
 
-      const districtName = await getDistrictName(profile.district_id);
+      // OPTIMIZATION: Use cached district name instead of re-fetching
       if (!districtName) {
         Alert.alert('Error', 'District not found. Please contact admin.');
         return;
@@ -471,45 +620,22 @@ export default function InstitutionCollectionScreen() {
         return;
       }
 
-      // Calculate totals and balances
-      const demandArrears = dcb?.demand_arrears || 0;
-      const demandCurrent = dcb?.demand_current || 0;
-      const demandTotal = demandArrears + demandCurrent;
-      const collectionTotal = cArrearNum + cCurrentNum;
-      const balanceArrears = demandArrears - cArrearNum;
-      const balanceCurrent = demandCurrent - cCurrentNum;
-      const balanceTotal = balanceArrears + balanceCurrent;
-
-      // Update DCB collection values in district-specific table
-      const updateData: any = {
-        collection_arrears: cArrearNum,
-        collection_current: cCurrentNum,
-        collection_total: collectionTotal,
-        balance_arrears: balanceArrears,
-        balance_current: balanceCurrent,
-        balance_total: balanceTotal,
-        remarks: remarks.trim() || null,
-      };
-
-      const { error: dcbError } = await supabase
-        .from(tableName)
-        .update(updateData)
-        .eq('ap_gazette_no', apGazetteNo);
-
-      if (dcbError) {
-        console.error('Error updating DCB:', dcbError);
-        Alert.alert('Error', 'Failed to save collection data');
-        return;
-      }
-
-      // Create or update collection record with status 'sent_to_accounts'
-      const { data: existingCollection } = await supabase
+      // Create or update collection record first
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:606',message:'Checking for existing collection',data:{institutionId,collectionDate,profileId:profile?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      const { data: existingCollection, error: existingError } = await supabase
         .from('collections')
         .select('id')
         .eq('institution_id', institutionId)
         .eq('inspector_id', profile.id)
-        .eq('collection_date', new Date().toISOString().split('T')[0])
-        .single();
+        .eq('collection_date', collectionDate)
+        .maybeSingle();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d30bd98a-a97d-4a8d-b6e1-ba42aa3528e9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/inspector/search/collection.tsx:613',message:'Existing collection query result',data:{hasData:!!existingCollection,hasError:!!existingError,errorCode:existingError?.code,errorMessage:existingError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+
+      let collectionId: number;
 
       if (existingCollection) {
         // Update existing collection and send for review
@@ -518,7 +644,8 @@ export default function InstitutionCollectionScreen() {
           .update({
             arrear_amount: cArrearNum,
             current_amount: cCurrentNum,
-            total_amount: cArrearNum + cCurrentNum,
+            financial_year: financialYear,
+            over_collection_reason: overCollectionReason.trim() || null,
             status: 'sent_to_accounts', // This will trigger notification
           })
           .eq('id', existingCollection.id);
@@ -529,24 +656,7 @@ export default function InstitutionCollectionScreen() {
           return;
         }
 
-        // Update receipts if uploaded
-        if (billReceiptPath) {
-          await supabase.from('receipts').upsert({
-            collection_id: existingCollection.id,
-            type: 'bill',
-            file_path: billReceiptPath,
-            file_name: `bill_${Date.now()}.jpg`,
-          });
-        }
-
-        if (transactionReceiptPath) {
-          await supabase.from('receipts').upsert({
-            collection_id: existingCollection.id,
-            type: 'transaction',
-            file_path: transactionReceiptPath,
-            file_name: `transaction_${Date.now()}.jpg`,
-          });
-        }
+        collectionId = existingCollection.id;
       } else {
         // Create new collection and send for review
         const { data: newCollection, error: createError } = await supabase
@@ -556,9 +666,10 @@ export default function InstitutionCollectionScreen() {
             inspector_id: profile.id,
             arrear_amount: cArrearNum,
             current_amount: cCurrentNum,
-            total_amount: cArrearNum + cCurrentNum,
+            financial_year: financialYear,
+            over_collection_reason: overCollectionReason.trim() || null,
             status: 'sent_to_accounts', // This will trigger notification
-            collection_date: new Date().toISOString().split('T')[0],
+            collection_date: collectionDate,
           })
           .select()
           .single();
@@ -569,40 +680,86 @@ export default function InstitutionCollectionScreen() {
           return;
         }
 
-        // Upload receipts
-        if (billReceiptPath && newCollection) {
-          await supabase.from('receipts').insert({
-            collection_id: newCollection.id,
-            type: 'bill',
-            file_path: billReceiptPath,
-            file_name: `bill_${Date.now()}.jpg`,
-          });
-        }
+        collectionId = newCollection.id;
+      }
 
-        if (transactionReceiptPath && newCollection) {
-          await supabase.from('receipts').insert({
-            collection_id: newCollection.id,
-            type: 'transaction',
-            file_path: transactionReceiptPath,
-            file_name: `transaction_${Date.now()}.jpg`,
+      // Upload images with hash computation
+      if (billReceipt) {
+        const uploadResult = await uploadImage(
+          billReceipt,
+          `${profile.id}/${institutionId}/bill_${Date.now()}`,
+          'bill',
+          collectionId
+        );
+        if (uploadResult) {
+          await supabase.from('receipts').upsert({
+            collection_id: collectionId,
+            type: 'bill',
+            file_path: uploadResult.path,
+            file_name: `bill_${Date.now()}.jpg`,
+            file_hash: uploadResult.hash,
           });
         }
       }
 
+      if (transactionReceipt) {
+        const uploadResult = await uploadImage(
+          transactionReceipt,
+          `${profile.id}/${institutionId}/transaction_${Date.now()}`,
+          'transaction',
+          collectionId
+        );
+        if (uploadResult) {
+          await supabase.from('receipts').upsert({
+            collection_id: collectionId,
+            type: 'transaction',
+            file_path: uploadResult.path,
+            file_name: `transaction_${Date.now()}.jpg`,
+            file_hash: uploadResult.hash,
+          });
+        }
+      }
+
+      // SEND FOR REVIEW: Update DCB with provisional flag
+      // This marks the collection as provisional until verified
+      const { error: dcbError } = await updateDcbProvisional(
+        tableName,
+        apGazetteNo,
+        cArrearNum,
+        cCurrentNum,
+        remarks.trim() || null,
+        financialYear
+      );
+
+      if (dcbError) {
+        console.error('Error updating DCB provisional:', dcbError);
+        // Don't fail the whole operation, just log the error
+      }
+
+
       Alert.alert('Success', 'Collection sent for review. Accounts team will be notified.', [
         {
           text: 'View Collections',
-          onPress: () => router.push('/inspector/collections'),
+          onPress: () => {
+
+            router.push('/inspector/collections');
+          },
         },
         {
           text: 'OK',
-          onPress: () => router.back(),
+          onPress: () => {
+
+            router.back();
+          },
         },
       ]);
-    } catch (error) {
+    } catch (error: any) {
+
       console.error('Error sending collection for review:', error);
       Alert.alert('Error', 'Failed to send collection for review');
     } finally {
+
+      savingRef.current = false; // Clear guard
       setSaving(false);
     }
   };
@@ -691,12 +848,33 @@ export default function InstitutionCollectionScreen() {
           </View>
         </View>
 
-        {/* Collection (Input) */}
+        {/* Previous Collections (Read-only) */}
+        {(existingCollectionArrears > 0 || existingCollectionCurrent > 0) && (
+          <View style={[styles.dcbCard, { backgroundColor: '#F0F9FF', borderColor: '#3B82F6' }]}>
+            <Text style={styles.dcbCardTitle}>Previous Collections (Read-only)</Text>
+            <View style={styles.dcbRow}>
+              <View style={styles.dcbItem}>
+                <Text style={styles.dcbLabel}>C-Arrear</Text>
+                <Text style={styles.dcbValue}>₹{existingCollectionArrears.toLocaleString('en-IN')}</Text>
+              </View>
+              <View style={styles.dcbItem}>
+                <Text style={styles.dcbLabel}>C-Current</Text>
+                <Text style={styles.dcbValue}>₹{existingCollectionCurrent.toLocaleString('en-IN')}</Text>
+              </View>
+              <View style={styles.dcbItem}>
+                <Text style={styles.dcbLabel}>C-Total</Text>
+                <Text style={styles.dcbValue}>₹{(existingCollectionArrears + existingCollectionCurrent).toLocaleString('en-IN')}</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* New Collection (Input) */}
         <View style={[styles.dcbCard, styles.collectionCard]}>
-          <Text style={styles.dcbCardTitle}>Collection (Input)</Text>
+          <Text style={styles.dcbCardTitle}>New Payment (Input)</Text>
           <View style={styles.inputRow}>
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>C-Arrear</Text>
+              <Text style={styles.inputLabel}>New C-Arrear</Text>
               <TextInput
                 style={styles.input}
                 value={cArrear}
@@ -707,7 +885,7 @@ export default function InstitutionCollectionScreen() {
               />
             </View>
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>C-Current</Text>
+              <Text style={styles.inputLabel}>New C-Current</Text>
               <TextInput
                 style={styles.input}
                 value={cCurrent}
@@ -719,9 +897,15 @@ export default function InstitutionCollectionScreen() {
             </View>
           </View>
           <View style={styles.computedRow}>
-            <Text style={styles.computedLabel}>C-Total</Text>
+            <Text style={styles.computedLabel}>New Payment Total</Text>
             <Text style={styles.computedValue}>₹{cTotal.toLocaleString('en-IN')}</Text>
           </View>
+          {(existingCollectionArrears > 0 || existingCollectionCurrent > 0) && (
+            <View style={[styles.computedRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E5E5EA' }]}>
+              <Text style={styles.computedLabel}>Total After This Payment</Text>
+              <Text style={[styles.computedValue, { color: '#1A9D5C' }]}>₹{totalCollectionArrears + totalCollectionCurrent}</Text>
+            </View>
+          )}
         </View>
 
         {/* Balance (Computed) */}
@@ -792,6 +976,29 @@ export default function InstitutionCollectionScreen() {
           textAlignVertical="top"
         />
       </View>
+
+      {/* Over-Collection Reason (shown if over-collection detected) */}
+      {(newCollectionArrears > 0 || newCollectionCurrent > 0) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            Over-Collection Reason{' '}
+            <Text style={styles.requiredAsterisk}>*</Text>
+          </Text>
+          <Text style={styles.helperText}>
+            If this collection exceeds the remaining balance, please provide a reason.
+          </Text>
+          <TextInput
+            style={styles.remarksInput}
+            value={overCollectionReason}
+            onChangeText={setOverCollectionReason}
+            placeholder="Enter reason for over-collection (if applicable)..."
+            placeholderTextColor="#8E8E93"
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+        </View>
+      )}
 
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
@@ -1027,6 +1234,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito-Bold',
     color: '#1A9D5C',
     marginLeft: 8,
+  },
+  requiredAsterisk: {
+    color: '#FF3B30',
+    fontSize: 16,
+  },
+  helperText: {
+    fontSize: 12,
+    fontFamily: 'Nunito-Regular',
+    color: '#8E8E93',
+    marginBottom: 8,
+    fontStyle: 'italic',
   },
   remarksInput: {
     backgroundColor: '#F7F9FC',
